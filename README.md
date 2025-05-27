@@ -23,10 +23,15 @@ The frontend was developed using **React** and styled with **Tailwind CSS**, whi
 - **Admin Panel**: View and annotate student plans to help with course corrections   
 - **Google OAuth Authentication**: Secure login using school-linked Google accounts  
 - **Plan Versioning**: Students can maintain alternate schedules under different names (e.g., “Plan A”, “Plan B”)  
-- **Responsive Design**: Fully styled with **Tailwind CSS** for mobile and desktop usability  
+- **Responsive Design**: Fully styled with **Tailwind CSS** for mobile and desktop usability
 
 ## Technologies Used  
 - **Frontend**: React, Tailwind CSS  
 - **Backend**: Node.js, Express.js, Passport.js (Google OAuth), SQLite  
 - **Authentication**: Google OAuth with Passport.js  
-- **Version Control**: Git, GitHub  
+- **Version Control**: Git, GitHub
+
+<img width="988" alt="Screenshot 2025-05-27 at 3 22 00 PM" src="https://github.com/user-attachments/assets/ab4d1013-4700-4271-9dd4-f4c858364fc2" />
+<img width="598" alt="Screenshot 2025-05-27 at 3 22 26 PM" src="https://github.com/user-attachments/assets/0e219f35-dca3-4c5e-9264-73cbf9647803" />
+<img width="584" alt="Screenshot 2025-05-27 at 3 22 41 PM" src="https://github.com/user-attachments/assets/81f38956-0140-4382-82fc-7e79cd8a6e4b" />
+
