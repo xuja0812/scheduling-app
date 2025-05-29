@@ -13,7 +13,7 @@ const port = 4000;
 initDB();
 
 app.use(cors({
-  origin: 'http://localhost:5174',
+  origin: 'http://localhost:5173',
   credentials: true,
 }));
 
@@ -63,51 +63,51 @@ app.get('/all-schedules', (req, res) => {
 });
 
 app.get('/api/admin/all-plans', (req, res) => {
-  logReq(req);
-  if (!req.isAuthenticated() || req.user.role !== 'admin') {
-    console.log('Unauthorized access attempt to /api/admin/all-plans');
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-
-  const query = `
-    SELECT plans.id as plan_id, plans.name as plan_name, users.email as student_email,
-           plan_courses.class_code, plan_courses.year, plan_courses.semester
-    FROM plans
-    JOIN users ON plans.user_id = users.id
-    LEFT JOIN plan_courses ON plans.id = plan_courses.plan_id
-    ORDER BY users.email, plans.name, plan_courses.year, plan_courses.semester
-  `;
-
-  db.all(query, [], (err, rows) => {
-    if (err) {
-      console.error('Error fetching all plans:', err.message);
-      return res.status(500).json({ error: err.message });
+    logReq(req);
+    if (!req.isAuthenticated() || req.user.role !== 'admin') {
+      console.log('Unauthorized access attempt to /api/admin/all-plans');
+      return res.status(403).json({ error: 'Forbidden' });
     }
-
-    const plansMap = {};
-    rows.forEach(row => {
-      if (!plansMap[row.plan_id]) {
-        plansMap[row.plan_id] = {
-          planId: row.plan_id,
-          planName: row.plan_name,
-          studentEmail: row.student_email,
-          courses: [],
-        };
+  
+    const query = 
+      `SELECT plans.id as plan_id, plans.name as plan_name, users.email as student_email,
+             plan_courses.class_code, plan_courses.year, plan_courses.semester
+      FROM plans
+      JOIN users ON plans.user_id = users.id
+      LEFT JOIN plan_courses ON plans.id = plan_courses.plan_id
+      ORDER BY users.email, plans.name, plan_courses.year, plan_courses.semester`
+    ;
+  
+    db.all(query, [], (err, rows) => {
+      if (err) {
+        console.error('Error fetching all plans:', err.message);
+        return res.status(500).json({ error: err.message });
       }
-      if (row.class_code) {
-        plansMap[row.plan_id].courses.push({
-          class_code: row.class_code,
-          year: row.year,
-          semester: row.semester,
-        });
-      }
+  
+      const plansMap = {};
+      rows.forEach(row => {
+        if (!plansMap[row.plan_id]) {
+          plansMap[row.plan_id] = {
+            planId: row.plan_id,
+            planName: row.plan_name,
+            studentEmail: row.student_email,
+            courses: [],
+          };
+        }
+        if (row.class_code) {
+          plansMap[row.plan_id].courses.push({
+            class_code: row.class_code,
+            year: row.year,
+            semester: row.semester,
+          });
+        }
+      });
+  
+      const allPlans = Object.values(plansMap);
+      console.log("All plans:", allPlans);
+      res.json(allPlans);
     });
-
-    const allPlans = Object.values(plansMap);
-    console.log("All plans:", allPlans);
-    res.json(allPlans);
   });
-});
 
 app.get('/auth/google', (req, res, next) => {
   logReq(req);
@@ -122,16 +122,16 @@ app.get('/auth/google/callback',
     next();
   },
   passport.authenticate('google', {
-    failureRedirect: 'http://localhost:5174/login',
+    failureRedirect: 'http://localhost:5173/login',
   }),
   (req, res) => {
     console.log(`User logged in: ${req.user.email}`);
     req.session.save(err => {
       if (err) {
         console.error('Session save error:', err);
-        return res.redirect('http://localhost:5174/login');
+        return res.redirect('http://localhost:5173/login');
       }
-      res.redirect('http://localhost:5174/dashboard');
+      res.redirect('http://localhost:5173/dashboard');
     });
   }
 );
@@ -331,7 +331,7 @@ app.put('/api/plans/:planId', (req, res) => {
 app.put('/api/plans/:planId/courses', (req, res) => {
   logReq(req);
   const { planId } = req.params;
-  const { courses } = req.body;
+  const { courses, name } = req.body;
 
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -358,14 +358,177 @@ app.put('/api/plans/:planId/courses', (req, res) => {
       }
       insertStmt.finalize((err) => {
         if (err) {
-          console.error('Error inserting new courses:', err.message);
+          console.error('Error inserting new plan courses:', err.message);
           return res.status(500).json({ error: err.message });
         }
-        res.json({ message: 'Plan updated successfully' });
+
+        db.run('UPDATE plans SET name = ? WHERE id = ?', [name, planId], (err) => {
+          if (err) {
+            console.error('Error updating plan name:', err.message);
+            return res.status(500).json({ error: err.message });
+          }
+          res.json({ message: 'Plan courses updated successfully' });
+        });
       });
     });
   });
 });
+
+app.delete('/api/plans/:planId', (req, res) => {
+  logReq(req);
+  const { planId } = req.params;
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  // Verify ownership
+  db.get('SELECT * FROM plans WHERE id = ? AND user_id = ?', [planId, req.user.id], (err, plan) => {
+    if (err) {
+      console.error('Error fetching plan for deletion:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found or unauthorized' });
+    }
+
+    // Delete courses first (foreign key constraints assumed)
+    db.run('DELETE FROM plan_courses WHERE plan_id = ?', [planId], (err) => {
+      if (err) {
+        console.error('Error deleting plan courses:', err.message);
+        return res.status(500).json({ error: err.message });
+      }
+      // Delete plan itself
+      db.run('DELETE FROM plans WHERE id = ?', [planId], (err) => {
+        if (err) {
+          console.error('Error deleting plan:', err.message);
+          return res.status(500).json({ error: err.message });
+        }
+        res.json({ message: 'Plan deleted successfully' });
+      });
+    });
+  });
+});
+
+// Add a comment to a plan
+app.post('/api/admin/comment', (req, res) => {
+    logReq(req);
+    if (!req.isAuthenticated() || req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  
+    const { planId, comment } = req.body;
+    if (!planId || !comment) {
+      return res.status(400).json({ error: 'Missing planId or comment' });
+    }
+  
+    const id = uuidv4();
+    db.run(
+      `INSERT INTO comments (id, plan_id, user_id, text) VALUES (?, ?, ?, ?)`,
+      [id, planId, req.user.id, comment],
+      (err) => {
+        if (err) {
+          console.error('Error saving comment:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+        res.json({ success: true });
+      }
+    );
+  });
+  
+  // Get all comments for a plan
+  app.get('/api/admin/comments/:planId', (req, res) => {
+    logReq(req);
+    if (!req.isAuthenticated() || req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  
+    const { planId } = req.params;
+    db.all(
+      `SELECT comments.id, comments.text, comments.created_at, users.name AS author
+       FROM comments
+       JOIN users ON comments.user_id = users.id
+       WHERE plan_id = ?
+       ORDER BY comments.created_at DESC`,
+      [planId],
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching comments:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+        res.json(rows);
+      }
+    );
+  });
+
+  app.get('/api/plans/:planId/comments', (req, res) => {
+    logReq(req);
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+  
+    const { planId } = req.params;
+  
+    const query = `
+      SELECT 
+        comments.id,
+        comments.plan_id,
+        comments.user_id,
+        comments.text,
+        comments.created_at,
+        users.name AS author,
+        users.email AS author_email,
+        users.role AS author_role
+      FROM comments
+      JOIN users ON comments.user_id = users.id
+      WHERE comments.plan_id = ?
+      ORDER BY comments.created_at ASC
+    `;
+  
+    db.all(query, [planId], (err, rows) => {
+      if (err) {
+        console.error('Error fetching comments with authors:', err.message);
+        return res.status(500).json({ error: err.message });
+      }
+  
+      res.json(rows);
+    });
+  });
+  
+
+  app.post('/api/plans/:planId/comments', (req, res) => {
+    logReq(req);
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+  
+    const { planId } = req.params;
+    const { text } = req.body;
+    const userId = req.user.id; // or req.user.email, depending on your schema
+  
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'Comment text is required' });
+    }
+  
+    const query = `INSERT INTO comments (plan_id, user_id, text, created_at) VALUES (?, ?, ?, datetime('now'))`;
+  
+    db.run(query, [planId, userId, text.trim()], function (err) {
+      if (err) {
+        console.error('Error inserting comment:', err.message);
+        return res.status(500).json({ error: err.message });
+      }
+  
+      res.status(201).json({ 
+        id: this.lastID, 
+        plan_id: planId, 
+        user_id: userId, 
+        text, 
+        created_at: new Date().toISOString() 
+      });
+    });
+  });
+  
+  
+  
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);

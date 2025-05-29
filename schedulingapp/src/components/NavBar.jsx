@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
 import { Link, useLocation } from 'react-router-dom';
 import { keyframes } from '@mui/system';
@@ -17,15 +17,27 @@ const gradientAnimation = keyframes`
 
 export default function NavBar() {
   const location = useLocation();
+  const [user, setUser] = useState(null);
 
-  const navItems = [
-    { label: 'Log In', to: '/' },
-    { label: 'Class Planner', to: '/planner' },
-    { label: 'Class Catalog', to: '/classes' },
-    { label: 'My Dashboard', to: '/dashboard' },
-    { label: 'Log Out', to: '/leave' },
-    { label: 'All Schedules', to: '/all' },
-  ];
+  useEffect(() => {
+    fetch('http://localhost:4000/me', { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) throw new Error('Not signed in');
+        return res.json();
+      })
+      .then((data) => setUser(data.user))
+      .catch(() => setUser(null));
+  }, []);
+
+  const navItems = user
+    ? [
+        { label: 'Class Planner', to: '/planner' },
+        { label: 'Class Catalog', to: '/classes' },
+        { label: 'My Dashboard', to: '/dashboard' },
+        ...(user.role === 'admin' ? [{ label: 'All Schedules', to: '/all' }] : []),
+        { label: 'Log Out', to: '/leave' },
+      ]
+    : [{ label: 'Log In', to: '/' }];
 
   return (
     <AppBar

@@ -1,37 +1,32 @@
-# High School Class Scheduler
+# Scheduling App
 
-## Overview  
-This full-stack web app allows high school students to create, save, and manage multi-year academic plans while enabling school administrators to view and annotate those plans. The platform helps students map out their coursework across all four years of high school, track graduation requirements in real-time, and explore alternative schedules (e.g., “Plan A”, “Plan B”). Admins can view all student schedules and provide feedback through annotations.
+## Overview
+This web app allows users to create, manage, and save four-year class schedules for high school students. Students can plan their classes over four years, track credit fulfillment in real time, and save multiple plans for comparison. Admins can view all student schedules and provide annotations to flag conflicts or suggest improvements.
 
-## Implementation  
-The frontend was developed using **React** and styled with **Tailwind CSS**, while the backend is powered by **Express.js** and uses **SQLite** for data persistence. Authentication is handled via **Google OAuth** using **Passport.js**.
+## Implementation
+The frontend of this app is built with **React** and **Tailwind CSS**. The backend is implemented in **Node.js** with **Express** and uses **PostgreSQL** for data storage. User authentication is handled via **Google OAuth**, supporting both students and admin roles with different access privileges.
 
-### Frontend (React)  
-- Built with **React** and **Tailwind CSS**
-- Students can select courses to populate their schedule for each year  
-- Users can view all saved schedules and toggle between different plans  
-- Admins can log in and view schedules from all users, adding annotations to highlight issues or offer suggestions  
+### Frontend (React + Tailwind CSS):
+- React components and hooks provide dynamic schedule creation and editing.
+- Tailwind CSS and Material UI components.
+- Users can create multiple plans, see credit requirements update in real time, and view saved schedules.
+- Admins have access to view all schedules and annotate them with feedback or conflict warnings.
 
-### Backend (Node.js with Express)  
-- Uses **Express.js** for routing and API endpoints  
-- Integrated **Passport.js** for Google OAuth login and session management  
-- Role-based access control restricts admin functionality to specific authorized users  
-- **SQLite** database schema includes tables for users, classes, requirements, plans, and plan-specific courses  
+### Backend (Node.js + Express + PostgreSQL):
+- REST API endpoints manage users, class schedules, plans, and annotations.
+- PostgreSQL stores user profiles, class data, schedules, and admin annotations.
+- Google OAuth integration secures login and distinguishes between student and admin roles.
 
-### Features  
-- **Student Dashboard**: View and edit multiple saved four-year plans  
-- **Admin Panel**: View and annotate student plans to help with course corrections   
-- **Google OAuth Authentication**: Secure login using school-linked Google accounts  
-- **Plan Versioning**: Students can maintain alternate schedules under different names (e.g., “Plan A”, “Plan B”)  
-- **Responsive Design**: Fully styled with **Tailwind CSS** for mobile and desktop usability
+### Features:
+- **User Authentication**: Login via Google accounts, with role-based access.
+- **Schedule Planning**: Create and save four-year plans, add or remove classes, and monitor credits.
+- **Multiple Plans**: Support for naming and managing several plans per user (e.g., “Plan A”, “Plan B”).
+- **Admin Tools**: View all student plans and annotate to flag conflicts or provide advice.
 
-## Technologies Used  
-- **Frontend**: React, Tailwind CSS  
-- **Backend**: Node.js, Express.js, Passport.js (Google OAuth), SQLite  
-- **Authentication**: Google OAuth with Passport.js  
+## Technologies Used:
+- **Frontend**: React, Tailwind CSS, Material UI, Google OAuth
+- **Backend**: Node.js, Express, PostgreSQL, OAuth 2.0
 - **Version Control**: Git, GitHub
-
-<img width="988" alt="Screenshot 2025-05-27 at 3 22 00 PM" src="https://github.com/user-attachments/assets/ab4d1013-4700-4271-9dd4-f4c858364fc2" />
-<img width="598" alt="Screenshot 2025-05-27 at 3 22 26 PM" src="https://github.com/user-attachments/assets/0e219f35-dca3-4c5e-9264-73cbf9647803" />
-<img width="584" alt="Screenshot 2025-05-27 at 3 22 41 PM" src="https://github.com/user-attachments/assets/81f38956-0140-4382-82fc-7e79cd8a6e4b" />
-
+<img width="988" alt="Screenshot 2025-05-27 at 3 22 00 PM" src="https://github.com/user-attachments/assets/54106124-68c2-49e7-9c3a-abf7ca439ac9" />
+<img width="598" alt="Screenshot 2025-05-27 at 3 22 26 PM" src="https://github.com/user-attachments/assets/9279a689-64de-44cb-9e4e-d2876871714f" />
+<img width="584" alt="Screenshot 2025-05-27 at 3 22 41 PM" src="https://github.com/user-attachments/assets/fcfae4ba-3508-460c-b8fb-c0e7afdda95f" />
