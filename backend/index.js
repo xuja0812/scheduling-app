@@ -272,7 +272,6 @@ app.put('/api/plans/:planId/courses', async (req, res) => {
     // Delete old plan courses
     await pool.query('DELETE FROM plan_courses WHERE plan_id = $1', [planId]);
 
-    // Insert new courses (using transaction to be safe)
     await pool.query('BEGIN');
     for (const course of courses) {
       await pool.query(
