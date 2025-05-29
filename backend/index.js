@@ -3,14 +3,12 @@ const cors = require('cors');
 const session = require('express-session');
 const passport = require('./auth');
 const cookieParser = require('cookie-parser');
-const { db, initDB } = require('./db');
+const { pool } = require('./db');  
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 const app = express();
 const port = 4000;
-
-initDB();
 
 app.use(cors({
   origin: 'http://localhost:5173',
@@ -38,76 +36,57 @@ function logReq(req) {
   console.log(`Request: ${req.method} ${req.originalUrl} - User: ${req.user ? req.user.email : 'Not authenticated'}`);
 }
 
-app.get('/my-schedules', (req, res) => {
-  logReq(req);
-  if (!req.isAuthenticated()) {
-    console.log('User not authenticated for /my-schedules');
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-  res.json([
-    { year: '2025', semester: 'Fall', class_code: 'MATH101' },
-    { year: '2025', semester: 'Fall', class_code: 'ENG202' },
-  ]);
-});
+module.exports = { app, pool };
 
-app.get('/all-schedules', (req, res) => {
+app.get('/api/admin/all-plans', async (req, res) => {
   logReq(req);
+
   if (!req.isAuthenticated() || req.user.role !== 'admin') {
-    console.log('Unauthorized access attempt to /all-schedules');
+    console.log('Unauthorized access attempt to /api/admin/all-plans');
     return res.status(403).json({ error: 'Forbidden' });
   }
-  res.json([
-    { year: '2025', semester: 'Fall', name: 'Jasmine', class_code: 'MATH101' },
-    { year: '2025', semester: 'Fall', name: 'Alex', class_code: 'BIO104' },
-  ]);
+
+  const query = `
+    SELECT plans.id as plan_id, plans.name as plan_name, users.email as student_email,
+           plan_courses.class_code, plan_courses.year, plan_courses.semester
+    FROM plans
+    JOIN users ON plans.user_id = users.id
+    LEFT JOIN plan_courses ON plans.id = plan_courses.plan_id
+    ORDER BY users.email, plans.name, plan_courses.year, plan_courses.semester
+  `;
+
+  try {
+    const { rows } = await pool.query(query);
+
+    const plansMap = {};
+    rows.forEach(row => {
+      if (!plansMap[row.plan_id]) {
+        plansMap[row.plan_id] = {
+          planId: row.plan_id,
+          planName: row.plan_name,
+          studentEmail: row.student_email,
+          courses: [],
+        };
+      }
+      if (row.class_code) {
+        plansMap[row.plan_id].courses.push({
+          class_code: row.class_code,
+          year: row.year,
+          semester: row.semester,
+        });
+      }
+    });
+
+    const allPlans = Object.values(plansMap);
+    console.log("All plans:", allPlans);
+    res.json(allPlans);
+
+  } catch (err) {
+    console.error('Error fetching all plans:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get('/api/admin/all-plans', (req, res) => {
-    logReq(req);
-    if (!req.isAuthenticated() || req.user.role !== 'admin') {
-      console.log('Unauthorized access attempt to /api/admin/all-plans');
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-  
-    const query = 
-      `SELECT plans.id as plan_id, plans.name as plan_name, users.email as student_email,
-             plan_courses.class_code, plan_courses.year, plan_courses.semester
-      FROM plans
-      JOIN users ON plans.user_id = users.id
-      LEFT JOIN plan_courses ON plans.id = plan_courses.plan_id
-      ORDER BY users.email, plans.name, plan_courses.year, plan_courses.semester`
-    ;
-  
-    db.all(query, [], (err, rows) => {
-      if (err) {
-        console.error('Error fetching all plans:', err.message);
-        return res.status(500).json({ error: err.message });
-      }
-  
-      const plansMap = {};
-      rows.forEach(row => {
-        if (!plansMap[row.plan_id]) {
-          plansMap[row.plan_id] = {
-            planId: row.plan_id,
-            planName: row.plan_name,
-            studentEmail: row.student_email,
-            courses: [],
-          };
-        }
-        if (row.class_code) {
-          plansMap[row.plan_id].courses.push({
-            class_code: row.class_code,
-            year: row.year,
-            semester: row.semester,
-          });
-        }
-      });
-  
-      const allPlans = Object.values(plansMap);
-      console.log("All plans:", allPlans);
-      res.json(allPlans);
-    });
-  });
 
 app.get('/auth/google', (req, res, next) => {
   logReq(req);
@@ -162,124 +141,45 @@ app.get('/me', (req, res) => {
   }
 });
 
-const gradePoints = {
-  'A': 4.0, 'A-': 3.7, 'B+': 3.3, 'B': 3.0,
-  'B-': 2.7, 'C+': 2.3, 'C': 2.0, 'C-': 1.7,
-  'D+': 1.3, 'D': 1.0, 'F': 0
-};
-
-app.post('/graduation-progress', (req, res) => {
-  logReq(req);
-  const { takenClasses } = req.body;
-
-  db.all("SELECT * FROM classes", [], (err, allClasses) => {
-    if (err) {
-      console.error('Error fetching classes:', err.message);
-      return res.status(500).json({ error: err.message });
-    }
-
-    const taken = allClasses.filter(c => takenClasses.includes(c.code));
-    const remaining = allClasses.filter(c => !takenClasses.includes(c.code));
-    const creditsTaken = taken.reduce((sum, c) => sum + c.credits, 0);
-    const totalCredits = allClasses.reduce((sum, c) => sum + c.credits, 0);
-
-    res.json({
-      takenClasses: taken,
-      remainingClasses: remaining,
-      creditsTaken,
-      totalCredits,
-      progressPercent: ((creditsTaken / totalCredits) * 100).toFixed(1),
-    });
-  });
-});
-
-app.post('/gpa-calc', (req, res) => {
-  logReq(req);
-  const { grades } = req.body;
-  if (!grades || grades.length === 0) {
-    console.log('No grades provided for GPA calculation');
-    return res.json({ weightedGPA: 0, unweightedGPA: 0 });
-  }
-
-  let totalWeightedPoints = 0;
-  let totalUnweightedPoints = 0;
-  let totalClasses = grades.length;
-
-  grades.forEach(({ grade, weighted }) => {
-    let baseGPA = gradePoints[grade.toUpperCase()] ?? 0;
-    totalUnweightedPoints += baseGPA;
-    totalWeightedPoints += weighted ? Math.min(baseGPA + 1.0, 5.0) : baseGPA;
-  });
-
-  res.json({
-    weightedGPA: (totalWeightedPoints / totalClasses).toFixed(2),
-    unweightedGPA: (totalUnweightedPoints / totalClasses).toFixed(2),
-  });
-});
-
-app.post('/track-advisor', (req, res) => {
-  logReq(req);
-  const { subject, takenClasses } = req.body;
-
-  db.all('SELECT * FROM track_requirements WHERE subject = ?', [subject], (err, requirements) => {
-    if (err) {
-      console.error('Error fetching track requirements:', err.message);
-      return res.status(500).json({ error: err.message });
-    }
-
-    const trackLevels = ['regular', 'advanced'];
-    const qualifiedTracks = trackLevels.filter(track =>
-      requirements.filter(r => r.track_level === track)
-        .every(r => takenClasses.includes(r.required_class_code))
-    );
-
-    const userTrack = qualifiedTracks.length > 0
-      ? qualifiedTracks[qualifiedTracks.length - 1]
-      : 'none';
-
-    const reqClasses = requirements.filter(r => r.track_level === userTrack);
-    const remainingClasses = reqClasses
-      .filter(r => !takenClasses.includes(r.required_class_code))
-      .map(r => r.required_class_code);
-
-    res.json({ trackLevel: userTrack, requiredRemainingClasses: remainingClasses });
-  });
-});
-
-app.get('/api/plans', (req, res) => {
+app.get('/api/plans', async (req, res) => {
   logReq(req);
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  db.all('SELECT * FROM plans WHERE user_id = ?', [req.user.id], (err, rows) => {
-    if (err) {
-      console.error('Error fetching plans:', err.message);
-      return res.status(500).json({ error: err.message });
-    }
-    console.log(rows);
-    res.json(rows);
-  });
+  try {
+    const result = await pool.query('SELECT * FROM plans WHERE user_id = $1', [req.user.id]);
+    console.log(result.rows);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching plans:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get('/api/plans/:planId', (req, res) => {
+app.get('/api/plans/:planId', async (req, res) => {
   logReq(req);
   const { planId } = req.params;
+
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  db.all('SELECT * FROM plan_courses WHERE plan_id = ?', [planId], (err, courses) => {
-    if (err) {
-      console.error('Error fetching plan courses:', err.message);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json(courses);
-  });
+  try {
+    const result = await pool.query(
+      'SELECT * FROM plan_courses WHERE plan_id = $1',
+      [planId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching plan courses:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/api/plans', (req, res) => {
+app.post('/api/plans', async (req, res) => {
   logReq(req);
+
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
@@ -287,48 +187,70 @@ app.post('/api/plans', (req, res) => {
   const { name, courses } = req.body;
   const planId = uuidv4();
 
-  db.run('INSERT INTO plans (id, user_id, name) VALUES (?, ?, ?)', [planId, req.user.id, name], (err) => {
-    if (err) {
-      console.error('Error inserting plan:', err.message);
-      return res.status(500).json({ error: err.message });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    await client.query(
+      'INSERT INTO plans (id, user_id, name) VALUES ($1, $2, $3)',
+      [planId, req.user.id, name]
+    );
+
+    const insertCourseText = `
+      INSERT INTO plan_courses (plan_id, class_code, year, semester)
+      VALUES ($1, $2, $3, $4)
+    `;
+    for (const course of courses) {
+      await client.query(insertCourseText, [
+        planId,
+        course.class_code,
+        course.year,
+        course.semester,
+      ]);
     }
 
-    const insertStmt = db.prepare('INSERT INTO plan_courses (plan_id, class_code, year, semester) VALUES (?, ?, ?, ?)');
-    for (const course of courses) {
-      insertStmt.run(planId, course.class_code, course.year, course.semester);
-    }
-    insertStmt.finalize((err) => {
-      if (err) {
-        console.error('Error inserting plan courses:', err.message);
-        return res.status(500).json({ error: err.message });
-      }
-      res.json({ message: 'Plan created successfully', planId });
-    });
-  });
+    await client.query('COMMIT');
+    res.json({ message: 'Plan created successfully', planId });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error inserting plan and courses:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
 });
 
-app.put('/api/plans/:planId', (req, res) => {
+
+app.put('/api/plans/:planId', async (req, res) => {
   logReq(req);
   const { planId } = req.params;
   const { name } = req.body;
+
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
+
   console.log("The name is: ", name);
 
-  db.run('UPDATE plans SET name = ? WHERE id = ? AND user_id = ?', [name, planId, req.user.id], function (err) {
-    if (err) {
-      console.error('Error updating plan name:', err.message);
-      return res.status(500).json({ error: err.message });
-    }
-    if (this.changes === 0) {
+  try {
+    const result = await pool.query(
+      'UPDATE plans SET name = $1 WHERE id = $2 AND user_id = $3',
+      [name, planId, req.user.id]
+    );
+
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Plan not found or unauthorized' });
     }
+
     res.json({ message: 'Plan name updated' });
-  });
+  } catch (err) {
+    console.error('Error updating plan name:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.put('/api/plans/:planId/courses', (req, res) => {
+
+app.put('/api/plans/:planId/courses', async (req, res) => {
   logReq(req);
   const { planId } = req.params;
   const { courses, name } = req.body;
@@ -337,137 +259,128 @@ app.put('/api/plans/:planId/courses', (req, res) => {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  db.get('SELECT * FROM plans WHERE id = ? AND user_id = ?', [planId, req.user.id], (err, plan) => {
-    if (err) {
-      console.error('Error fetching plan:', err.message);
-      return res.status(500).json({ error: err.message });
-    }
-    if (!plan) {
+  try {
+    // Check if plan exists and belongs to user
+    const planResult = await pool.query(
+      'SELECT * FROM plans WHERE id = $1 AND user_id = $2',
+      [planId, req.user.id]
+    );
+    if (planResult.rowCount === 0) {
       return res.status(404).json({ error: 'Plan not found or unauthorized' });
     }
 
-    db.run('DELETE FROM plan_courses WHERE plan_id = ?', [planId], (err) => {
-      if (err) {
-        console.error('Error deleting old plan courses:', err.message);
-        return res.status(500).json({ error: err.message });
-      }
+    // Delete old plan courses
+    await pool.query('DELETE FROM plan_courses WHERE plan_id = $1', [planId]);
 
-      const insertStmt = db.prepare('INSERT INTO plan_courses (plan_id, class_code, year, semester) VALUES (?, ?, ?, ?)');
-      for (const course of courses) {
-        insertStmt.run(planId, course.class_code, course.year, course.semester);
-      }
-      insertStmt.finalize((err) => {
-        if (err) {
-          console.error('Error inserting new plan courses:', err.message);
-          return res.status(500).json({ error: err.message });
-        }
+    // Insert new courses (using transaction to be safe)
+    await pool.query('BEGIN');
+    for (const course of courses) {
+      await pool.query(
+        `INSERT INTO plan_courses (plan_id, class_code, year, semester) 
+         VALUES ($1, $2, $3, $4)`,
+        [planId, course.class_code, course.year, course.semester]
+      );
+    }
 
-        db.run('UPDATE plans SET name = ? WHERE id = ?', [name, planId], (err) => {
-          if (err) {
-            console.error('Error updating plan name:', err.message);
-            return res.status(500).json({ error: err.message });
-          }
-          res.json({ message: 'Plan courses updated successfully' });
-        });
-      });
-    });
-  });
+    // Update plan name
+    await pool.query('UPDATE plans SET name = $1 WHERE id = $2', [name, planId]);
+
+    await pool.query('COMMIT');
+
+    res.json({ message: 'Plan courses updated successfully' });
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    console.error('Error updating plan courses:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.delete('/api/plans/:planId', (req, res) => {
+app.delete('/api/plans/:planId', async (req, res) => {
   logReq(req);
   const { planId } = req.params;
+
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  // Verify ownership
-  db.get('SELECT * FROM plans WHERE id = ? AND user_id = ?', [planId, req.user.id], (err, plan) => {
-    if (err) {
-      console.error('Error fetching plan for deletion:', err.message);
-      return res.status(500).json({ error: err.message });
-    }
-    if (!plan) {
+  try {
+    const planResult = await pool.query(
+      'SELECT * FROM plans WHERE id = $1 AND user_id = $2',
+      [planId, req.user.id]
+    );
+    if (planResult.rowCount === 0) {
       return res.status(404).json({ error: 'Plan not found or unauthorized' });
     }
 
-    // Delete courses first (foreign key constraints assumed)
-    db.run('DELETE FROM plan_courses WHERE plan_id = ?', [planId], (err) => {
-      if (err) {
-        console.error('Error deleting plan courses:', err.message);
-        return res.status(500).json({ error: err.message });
-      }
-      // Delete plan itself
-      db.run('DELETE FROM plans WHERE id = ?', [planId], (err) => {
-        if (err) {
-          console.error('Error deleting plan:', err.message);
-          return res.status(500).json({ error: err.message });
-        }
-        res.json({ message: 'Plan deleted successfully' });
-      });
-    });
-  });
+    await pool.query('BEGIN');
+    await pool.query('DELETE FROM plan_courses WHERE plan_id = $1', [planId]);
+    await pool.query('DELETE FROM plans WHERE id = $1', [planId]);
+    await pool.query('COMMIT');
+
+    res.json({ message: 'Plan deleted successfully' });
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    console.error('Error deleting plan:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Add a comment to a plan
-app.post('/api/admin/comment', (req, res) => {
-    logReq(req);
-    if (!req.isAuthenticated() || req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-  
-    const { planId, comment } = req.body;
-    if (!planId || !comment) {
-      return res.status(400).json({ error: 'Missing planId or comment' });
-    }
-  
+app.post('/api/admin/comment', async (req, res) => {
+  logReq(req);
+  if (!req.isAuthenticated() || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { planId, comment } = req.body;
+  if (!planId || !comment) {
+    return res.status(400).json({ error: 'Missing planId or comment' });
+  }
+
+  try {
     const id = uuidv4();
-    db.run(
-      `INSERT INTO comments (id, plan_id, user_id, text) VALUES (?, ?, ?, ?)`,
-      [id, planId, req.user.id, comment],
-      (err) => {
-        if (err) {
-          console.error('Error saving comment:', err);
-          return res.status(500).json({ error: 'Internal server error' });
-        }
-        res.json({ success: true });
-      }
+    await pool.query(
+      `INSERT INTO comments (id, plan_id, user_id, text) VALUES ($1, $2, $3, $4)`,
+      [id, planId, req.user.id, comment]
     );
-  });
-  
-  // Get all comments for a plan
-  app.get('/api/admin/comments/:planId', (req, res) => {
-    logReq(req);
-    if (!req.isAuthenticated() || req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-  
-    const { planId } = req.params;
-    db.all(
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error saving comment:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/admin/comments/:planId', async (req, res) => {
+  logReq(req);
+  if (!req.isAuthenticated() || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { planId } = req.params;
+  try {
+    const result = await pool.query(
       `SELECT comments.id, comments.text, comments.created_at, users.name AS author
        FROM comments
        JOIN users ON comments.user_id = users.id
-       WHERE plan_id = ?
+       WHERE plan_id = $1
        ORDER BY comments.created_at DESC`,
-      [planId],
-      (err, rows) => {
-        if (err) {
-          console.error('Error fetching comments:', err);
-          return res.status(500).json({ error: 'Internal server error' });
-        }
-        res.json(rows);
-      }
+      [planId]
     );
-  });
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching comments:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
-  app.get('/api/plans/:planId/comments', (req, res) => {
-    logReq(req);
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-  
-    const { planId } = req.params;
-  
+app.get('/api/plans/:planId/comments', async (req, res) => {
+  logReq(req);
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { planId } = req.params;
+
+  try {
     const query = `
       SELECT 
         comments.id,
@@ -480,55 +393,46 @@ app.post('/api/admin/comment', (req, res) => {
         users.role AS author_role
       FROM comments
       JOIN users ON comments.user_id = users.id
-      WHERE comments.plan_id = ?
+      WHERE comments.plan_id = $1
       ORDER BY comments.created_at ASC
     `;
-  
-    db.all(query, [planId], (err, rows) => {
-      if (err) {
-        console.error('Error fetching comments with authors:', err.message);
-        return res.status(500).json({ error: err.message });
-      }
-  
-      res.json(rows);
-    });
-  });
-  
 
-  app.post('/api/plans/:planId/comments', (req, res) => {
-    logReq(req);
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-  
-    const { planId } = req.params;
-    const { text } = req.body;
-    const userId = req.user.id; // or req.user.email, depending on your schema
-  
-    if (!text || !text.trim()) {
-      return res.status(400).json({ error: 'Comment text is required' });
-    }
-  
-    const query = `INSERT INTO comments (plan_id, user_id, text, created_at) VALUES (?, ?, ?, datetime('now'))`;
-  
-    db.run(query, [planId, userId, text.trim()], function (err) {
-      if (err) {
-        console.error('Error inserting comment:', err.message);
-        return res.status(500).json({ error: err.message });
-      }
-  
-      res.status(201).json({ 
-        id: this.lastID, 
-        plan_id: planId, 
-        user_id: userId, 
-        text, 
-        created_at: new Date().toISOString() 
-      });
-    });
-  });
-  
-  
-  
+    const result = await pool.query(query, [planId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching comments with authors:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/plans/:planId/comments', async (req, res) => {
+  logReq(req);
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { planId } = req.params;
+  const { text } = req.body;
+  const userId = req.user.id;
+
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: 'Comment text is required' });
+  }
+
+  try {
+    const insertQuery = `
+      INSERT INTO comments (plan_id, user_id, text, created_at) 
+      VALUES ($1, $2, $3, NOW())
+      RETURNING id, plan_id, user_id, text, created_at
+    `;
+
+    const result = await pool.query(insertQuery, [planId, userId, text.trim()]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error inserting comment:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
