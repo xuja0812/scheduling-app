@@ -1,8 +1,7 @@
 const { Pool } = require('pg');
 
-// Configure your database connection here or use environment variables
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // or specify user, host, db, password, port
+  connectionString: process.env.DATABASE_URL, 
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
@@ -18,7 +17,6 @@ async function initDB() {
     await client.query('BEGIN');
     console.log("Beginning seeding...");
 
-    // Drop tables if they exist (optional for re-initialization)
     await client.query(`
       DROP TABLE IF EXISTS comments CASCADE;
       DROP TABLE IF EXISTS plan_courses CASCADE;
@@ -162,7 +160,7 @@ async function initDB() {
         console.log('Postgres connection test OK, server time:', res.rows[0]);
       }
     });
-    
+
     console.log('Database initialized successfully.');
   } catch (err) {
     await client.query('ROLLBACK');
