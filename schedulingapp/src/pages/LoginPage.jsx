@@ -3,8 +3,9 @@ import { Box, Typography, Button, Paper } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 
 const LoginPage = () => {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
   const handleLogin = () => {
-    window.location.href = 'http://localhost:4000/auth/google';
+    window.location.href = `${backendUrl}/auth/google`;
   };
 
   return (

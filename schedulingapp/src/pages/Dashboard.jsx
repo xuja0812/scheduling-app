@@ -16,8 +16,10 @@ const Dashboard = () => {
   const [schedules, setSchedules] = useState([]);
   const navigate = useNavigate();
 
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+
   useEffect(() => {
-    fetch('http://localhost:4000/me', { credentials: 'include' })
+    fetch(`${backendUrl}/me`, { credentials: 'include' })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch user');
         return res.json();
@@ -25,7 +27,7 @@ const Dashboard = () => {
       .then((data) => {
         setUser(data.user);
         const route = '/api/plans';
-        return fetch(`http://localhost:4000${route}`, { credentials: 'include' });
+        return fetch(`${backendUrl}${route}`, { credentials: 'include' });
       })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch schedules');

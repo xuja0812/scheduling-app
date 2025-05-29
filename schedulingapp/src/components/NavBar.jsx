@@ -20,7 +20,8 @@ export default function NavBar() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    fetch('http://localhost:4000/me', { credentials: 'include' })
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+    fetch(`${backendUrl}/me`, { credentials: 'include' })
       .then((res) => {
         if (!res.ok) throw new Error('Not signed in');
         return res.json();

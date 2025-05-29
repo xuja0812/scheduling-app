@@ -22,8 +22,10 @@ export default function AdminViewAllPlans() {
   const [comments, setComments] = useState([]);
   const [selectedEmail, setSelectedEmail] = useState(null);
 
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+
   useEffect(() => {
-    fetch('http://localhost:4000/api/admin/all-plans', {
+    fetch(`${backendURL}/api/admin/all-plans`, {
       credentials: 'include',
     })
       .then(res => {
@@ -43,7 +45,7 @@ export default function AdminViewAllPlans() {
   const fetchComments = async (planId) => {
     setComments([]);
     try {
-      const res = await fetch(`http://localhost:4000/api/admin/comments/${planId}`, {
+      const res = await fetch(`${backendURL}/api/admin/comments/${planId}`, {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch comments');
@@ -59,7 +61,7 @@ export default function AdminViewAllPlans() {
     if (!adminComment.trim()) return;
 
     try {
-      const res = await fetch('http://localhost:4000/api/admin/comment', {
+      const res = await fetch(`${backendURL}/api/admin/comment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
