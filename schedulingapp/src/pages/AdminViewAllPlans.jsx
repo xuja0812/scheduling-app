@@ -41,6 +41,7 @@ export default function AdminViewAllPlans() {
   }, []);
 
   const fetchComments = async (planId) => {
+    setComments([]);
     try {
       const res = await fetch(`http://localhost:4000/api/admin/comments/${planId}`, {
         credentials: 'include',

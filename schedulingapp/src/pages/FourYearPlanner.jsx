@@ -248,11 +248,12 @@ export default function FourYearPlanner() {
     const planId = plans[activePlanIndex]?.id;
     if (!planId || !comments[planId])
       return <Typography color="text.secondary">No comments yet.</Typography>;
-
+  
     const planComments = comments[planId];
+    console.log(planComments);
     if (planComments.length === 0)
       return <Typography color="text.secondary">No comments yet.</Typography>;
-
+  
     return (
       <Box
         component="ul"
@@ -266,11 +267,14 @@ export default function FourYearPlanner() {
           backgroundColor: '#fafafa',
         }}
       >
-        {planComments.map((comment) => (
+        {planComments.slice().reverse().map((comment) => (
           <li
             key={comment.id}
             style={{ padding: '8px 12px', borderBottom: '1px solid #eee' }}
           >
+            <Typography variant="subtitle2" sx={{ fontWeight: 500, color: 'gray' }}>
+              {comment.author}
+            </Typography>
             <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
               {comment.text}
             </Typography>
@@ -284,6 +288,7 @@ export default function FourYearPlanner() {
       </Box>
     );
   };
+  
 
   return (
     <Paper sx={{ p: 3, maxWidth: 900, margin: 'auto', mt: '160px' }}>

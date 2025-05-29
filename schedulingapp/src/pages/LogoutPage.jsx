@@ -13,7 +13,8 @@ const LogoutPage = () => {
         credentials: 'include',
       });
       console.log("logged out");
-      navigate('/');
+      // navigate('/'); 
+      window.location.href="/";
     } catch (error) {
       console.error('Logout failed:', error);
     }
