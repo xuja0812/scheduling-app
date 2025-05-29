@@ -12,7 +12,7 @@ const port = 4000;
 
 const allowedOrigins = [
   'http://localhost:5173',
-  'https://scheduler-two-rho.vercel.app/'
+  'https://scheduler-two-rho.vercel.app'
 ]
 
 app.use(cors({
@@ -107,14 +107,14 @@ app.get('/auth/google/callback',
   },
   passport.authenticate('google', {
     // failureRedirect: 'http://localhost:5173/login',
-    failureRedirect: 'https://scheduler-two-rho.vercel.app/',
+    failureRedirect: 'https://scheduler-two-rho.vercel.app',
   }),
   (req, res) => {
     console.log(`User logged in: ${req.user.email}`);
     req.session.save(err => {
       if (err) {
         console.error('Session save error:', err);
-        return res.redirect('https://scheduler-two-rho.vercel.app/');
+        return res.redirect('https://scheduler-two-rho.vercel.app');
       }
       res.redirect('https://scheduler-two-rho.vercel.app/dashboard');
     });
