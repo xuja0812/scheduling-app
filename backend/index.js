@@ -10,8 +10,13 @@ require('dotenv').config();
 const app = express();
 const port = 4000;
 
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://https://scheduler-two-rho.vercel.app/'
+]
+
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: allowedOrigins,
   credentials: true,
 }));
 
@@ -101,16 +106,17 @@ app.get('/auth/google/callback',
     next();
   },
   passport.authenticate('google', {
-    failureRedirect: 'http://localhost:5173/login',
+    // failureRedirect: 'http://localhost:5173/login',
+    failureRedirect: 'https://https://scheduler-two-rho.vercel.app/login',
   }),
   (req, res) => {
     console.log(`User logged in: ${req.user.email}`);
     req.session.save(err => {
       if (err) {
         console.error('Session save error:', err);
-        return res.redirect('http://localhost:5173/login');
+        return res.redirect('https://https://scheduler-two-rho.vercel.app/login');
       }
-      res.redirect('http://localhost:5173/dashboard');
+      res.redirect('https://https://scheduler-two-rho.vercel.app/dashboard');
     });
   }
 );
@@ -433,6 +439,7 @@ app.post('/api/plans/:planId/comments', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
 });
