@@ -319,6 +319,7 @@ app.delete('/api/plans/:planId', async (req, res) => {
     }
 
     await pool.query('BEGIN');
+    await pool.query('DELETE FROM comments WHERE plan_id = $1', [planId]);
     await pool.query('DELETE FROM plan_courses WHERE plan_id = $1', [planId]);
     await pool.query('DELETE FROM plans WHERE id = $1', [planId]);
     await pool.query('COMMIT');
