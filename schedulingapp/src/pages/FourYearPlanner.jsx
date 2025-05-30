@@ -336,14 +336,6 @@ export default function FourYearPlanner() {
               sx={{ mb: 2, width: '100%' }}
               placeholder="Enter a plan name"
             />
-            <Button
-              variant="contained"
-              onClick={handleUpdatePlanName}
-              sx={{ mb: 2 }}
-              disabled={!plans[activePlanIndex].name.trim()}
-            >
-              Save Plan Name
-            </Button>
 
             {defaultYears.map((year) => (
               <Box key={year} sx={{ mb: 3 }}>
@@ -418,7 +410,7 @@ export default function FourYearPlanner() {
               </Button>
               <Button variant="contained" onClick={handleSaveCourses} size="small">
                 Save Courses
-              </Button>
+            </Button>
               <Button variant="outlined" color="error" onClick={handleDeletePlan} size="small">
                 Delete Plan
               </Button>
