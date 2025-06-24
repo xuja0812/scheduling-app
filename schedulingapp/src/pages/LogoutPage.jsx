@@ -5,10 +5,11 @@ import { useNavigate } from 'react-router-dom';
 
 const LogoutPage = () => {
   const navigate = useNavigate();
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
   const handleLogout = async () => {
     try {
-      await fetch('http://localhost:4000/logout', {
+      await fetch(`${backendUrl}/logout`, {
         method: 'GET',
         credentials: 'include',
       });

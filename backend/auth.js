@@ -18,12 +18,14 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
+const CallBackURL = process.env.GOOGLE_CALLBACK_URL;
+
 passport.use(
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: 'http://localhost:4000/auth/google/callback',
+      callbackURL: CallBackURL,
     },
     async (accessToken, refreshToken, profile, done) => {
       const googleId = profile.id;

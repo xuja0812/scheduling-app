@@ -38,8 +38,10 @@ export default function FourYearPlanner() {
   const [comments, setComments] = useState({});
   const [newComment, setNewComment] = useState('');
 
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+
   useEffect(() => {
-    fetch('http://localhost:4000/api/plans', { credentials: 'include' })
+    fetch(`${backendUrl}/api/plans`, { credentials: 'include' })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch plans');
         return res.json();
@@ -52,7 +54,7 @@ export default function FourYearPlanner() {
 
         Promise.all(
           plansData.map((plan) =>
-            fetch(`http://localhost:4000/api/plans/${plan.id}`, { credentials: 'include' })
+            fetch(`${backendUrl}/api/plans/${plan.id}`, { credentials: 'include' })
               .then((r) => r.json())
               .then((courses) => {
                 const yearsGrouped = {
@@ -75,7 +77,7 @@ export default function FourYearPlanner() {
           setPlans(plansWithCourses);
 
           plansWithCourses.forEach((plan) => {
-            fetch(`http://localhost:4000/api/plans/${plan.id}/comments`, { credentials: 'include' })
+            fetch(`${backendUrl}/api/plans/${plan.id}/comments`, { credentials: 'include' })
               .then((res) => {
                 if (!res.ok) throw new Error('Failed to fetch comments');
                 return res.json();
@@ -93,7 +95,7 @@ export default function FourYearPlanner() {
   }, []);
 
   const fetchComments = (planId) => {
-    fetch(`http://localhost:4000/api/plans/${planId}/comments`, { credentials: 'include' })
+    fetch(`${backendUrl}/api/plans/${planId}/comments`, { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
         setComments((prev) => ({ ...prev, [planId]: data }));
@@ -104,7 +106,7 @@ export default function FourYearPlanner() {
     const planId = plans[activePlanIndex]?.id;
     if (!planId || !newComment.trim()) return;
 
-    fetch(`http://localhost:4000/api/plans/${planId}/comments`, {
+    fetch(`${backendUrl}/api/plans/${planId}/comments`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -145,7 +147,7 @@ export default function FourYearPlanner() {
     const coursesFlat = flattenCourses(activePlan.years);
 
     if (!activePlan.id) {
-      fetch('http://localhost:4000/api/plans', {
+      fetch(`${backendUrl}/api/plans`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -160,7 +162,7 @@ export default function FourYearPlanner() {
         })
         .catch(console.error);
     } else {
-      fetch(`http://localhost:4000/api/plans/${activePlan.id}/courses`, {
+      fetch(`${backendUrl}/api/plans/${activePlan.id}/courses`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -183,7 +185,7 @@ export default function FourYearPlanner() {
       return;
     }
 
-    fetch(`http://localhost:4000/api/plans/${activePlan.id}`, {
+    fetch(`${backendUrl}/api/plans/${activePlan.id}`, {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -202,7 +204,7 @@ export default function FourYearPlanner() {
       alert('Plan not saved yet');
       return;
     }
-    fetch(`http://localhost:4000/api/plans/${activePlan.id}`, {
+    fetch(`${backendUrl}/api/plans/${activePlan.id}`, {
       method: 'DELETE',
       credentials: 'include',
     })
@@ -334,14 +336,6 @@ export default function FourYearPlanner() {
               sx={{ mb: 2, width: '100%' }}
               placeholder="Enter a plan name"
             />
-            <Button
-              variant="contained"
-              onClick={handleUpdatePlanName}
-              sx={{ mb: 2 }}
-              disabled={!plans[activePlanIndex].name.trim()}
-            >
-              Save Plan Name
-            </Button>
 
             {defaultYears.map((year) => (
               <Box key={year} sx={{ mb: 3 }}>
@@ -416,7 +410,7 @@ export default function FourYearPlanner() {
               </Button>
               <Button variant="contained" onClick={handleSaveCourses} size="small">
                 Save Courses
-              </Button>
+            </Button>
               <Button variant="outlined" color="error" onClick={handleDeletePlan} size="small">
                 Delete Plan
               </Button>

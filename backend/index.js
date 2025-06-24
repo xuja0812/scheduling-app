@@ -10,22 +10,28 @@ require('dotenv').config();
 const app = express();
 const port = 4000;
 
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://scheduler-two-rho.vercel.app'
+]
+
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: allowedOrigins,
   credentials: true,
 }));
 
 app.use(express.json());
 app.use(cookieParser());
 
+app.set('trust proxy', 1);
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: false,
-    sameSite: 'lax',
+    secure: true, 
+    sameSite: 'none',
   }
 }));
 
@@ -101,16 +107,17 @@ app.get('/auth/google/callback',
     next();
   },
   passport.authenticate('google', {
-    failureRedirect: 'http://localhost:5173/login',
+    // failureRedirect: 'http://localhost:5173/login',
+    failureRedirect: 'https://scheduler-two-rho.vercel.app',
   }),
   (req, res) => {
     console.log(`User logged in: ${req.user.email}`);
     req.session.save(err => {
       if (err) {
         console.error('Session save error:', err);
-        return res.redirect('http://localhost:5173/login');
+        return res.redirect('https://scheduler-two-rho.vercel.app');
       }
-      res.redirect('http://localhost:5173/dashboard');
+      res.redirect('https://scheduler-two-rho.vercel.app/dashboard');
     });
   }
 );
@@ -272,7 +279,6 @@ app.put('/api/plans/:planId/courses', async (req, res) => {
     // Delete old plan courses
     await pool.query('DELETE FROM plan_courses WHERE plan_id = $1', [planId]);
 
-    // Insert new courses (using transaction to be safe)
     await pool.query('BEGIN');
     for (const course of courses) {
       await pool.query(
@@ -313,6 +319,7 @@ app.delete('/api/plans/:planId', async (req, res) => {
     }
 
     await pool.query('BEGIN');
+    await pool.query('DELETE FROM comments WHERE plan_id = $1', [planId]);
     await pool.query('DELETE FROM plan_courses WHERE plan_id = $1', [planId]);
     await pool.query('DELETE FROM plans WHERE id = $1', [planId]);
     await pool.query('COMMIT');
@@ -434,6 +441,7 @@ app.post('/api/plans/:planId/comments', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
 });
