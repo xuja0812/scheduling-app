@@ -3,16 +3,9 @@ import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
 import { Link, useLocation } from 'react-router-dom';
 import { keyframes } from '@mui/system';
 
-const gradientAnimation = keyframes`
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
+const subtleGlow = keyframes`
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
 `;
 
 export default function NavBar() {
@@ -32,22 +25,21 @@ export default function NavBar() {
 
   const navItems = user
     ? [
-        { label: 'Class Planner', to: '/planner' },
-        { label: 'Class Catalog', to: '/classes' },
-        { label: 'My Dashboard', to: '/dashboard' },
-        ...(user.role === 'admin' ? [{ label: 'All Schedules', to: '/all' }] : []),
-        { label: 'Log Out', to: '/leave' },
-      ]
-    : [{ label: 'Log In', to: '/' }];
+      { label: 'Schedule', to: `/planner?studentId=${user.email}` },
+      { label: 'Catalog', to: '/classes' },
+      { label: 'Dashboard', to: '/dashboard' },
+      ...(user.role === 'admin' ? [{ label: 'Admin', to: '/all' }] : []),
+      { label: 'Sign out', to: '/leave' },
+    ]
+    : [{ label: 'Sign in', to: '/' }];
 
   return (
     <AppBar
       position="fixed"
       sx={{
-        background: `linear-gradient(270deg, #3a4f7a, #2a65a0, #5a7dbf, #4271af, #2d5493)`,
-        backgroundSize: '1000% 1000%',
-        animation: `${gradientAnimation} 40s ease infinite`,
-        boxShadow: '0 3px 10px rgba(0,0,0,0.15)',
+        background: 'linear-gradient(180deg, #0f172a 0%, #1c2333 100%)',
+        boxShadow: 'none',
+        borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
         zIndex: 1300,
       }}
     >
@@ -55,9 +47,10 @@ export default function NavBar() {
         sx={{
           display: 'flex',
           justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          px: 3,
-          py: 1,
+          alignItems: 'center',
+          px: { xs: 3, sm: 6 },
+          py: 2,
+          minHeight: '72px',
         }}
       >
         <Typography
@@ -65,63 +58,103 @@ export default function NavBar() {
           component={Link}
           to="/dashboard"
           sx={{
+            fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             fontWeight: '700',
-            color: 'white',
+            fontSize: '1.5rem',
+            color: '#ffffff',
             textDecoration: 'none',
-            letterSpacing: 1.2,
+            letterSpacing: '-0.025em',
             cursor: 'pointer',
             userSelect: 'none',
-            transition: 'color 0.3s ease',
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            position: 'relative',
             '&:hover': {
-              color: '#4db6ac',
+              color: '#60a5fa',
+            },
+            '&::after': {
+              content: '""',
+              position: 'absolute',
+              bottom: -2,
+              left: '50%',
+              transform: 'translateX(-50%) scaleX(0)',
+              width: '100%',
+              height: '2px',
+              background: 'linear-gradient(90deg, #3b82f6, #60a5fa)',
+              borderRadius: '1px',
+              transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            },
+            '&:hover::after': {
+              transform: 'translateX(-50%) scaleX(1)',
             },
           }}
         >
-          Class Scheduler
+          ClassSync
         </Typography>
 
         <Box
           component="nav"
           sx={{
             display: 'flex',
-            gap: 1,
-            flexWrap: 'wrap',
-            justifyContent: { xs: 'center', sm: 'flex-end' },
-            mt: { xs: 1, sm: 0 },
-            width: { xs: '100%', sm: 'auto' },
+            gap: 0.5,
+            alignItems: 'center',
           }}
         >
-          {navItems.map(({ label, to }) => {
+          {navItems.map(({ label, to }, index) => {
             const isActive = location.pathname === to;
+            const isSignOut = label === 'Sign out';
+
             return (
               <Button
                 key={to}
                 component={Link}
                 to={to}
-                size="small"
                 sx={{
-                  color: isActive ? '#4db6ac' : 'white',
-                  fontWeight: isActive ? '600' : '400',
+                  color: isActive ? '#ffffff' : '#94a3b8',
+                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  fontWeight: isActive ? '600' : '500',
+                  fontSize: '0.875rem',
                   textTransform: 'none',
-                  transition: 'color 0.3s ease',
+                  borderRadius: '8px',
+                  px: 3,
+                  py: 1.5,
+                  minWidth: 'auto',
                   position: 'relative',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  background: isActive
+                    ? 'rgba(59, 130, 246, 0.1)'
+                    : 'transparent',
+                  border: isActive
+                    ? '1px solid rgba(59, 130, 246, 0.2)'
+                    : '1px solid transparent',
                   '&:hover': {
-                    color: '#4db6ac',
-                    transform: 'none',
-                    textShadow: 'none',
+                    color: isSignOut ? '#f87171' : '#ffffff',
+                    background: isSignOut
+                      ? 'rgba(248, 113, 113, 0.05)'
+                      : isActive
+                        ? 'rgba(59, 130, 246, 0.15)'
+                        : 'rgba(148, 163, 184, 0.05)',
+                    border: isSignOut
+                      ? '1px solid rgba(248, 113, 113, 0.1)'
+                      : '1px solid rgba(148, 163, 184, 0.1)',
+                    transform: 'translateY(-1px)',
                   },
-                  '&::after': isActive
-                    ? {
-                        content: '""',
-                        position: 'absolute',
-                        bottom: -3,
-                        left: 0,
-                        width: '100%',
-                        height: 2,
-                        backgroundColor: '#4db6ac',
-                        borderRadius: 1,
-                      }
-                    : {},
+                  '&:active': {
+                    transform: 'translateY(0)',
+                  },
+                  ...(isActive && {
+                    '&::before': {
+                      content: '""',
+                      position: 'absolute',
+                      top: '50%',
+                      left: 8,
+                      transform: 'translateY(-50%)',
+                      width: '3px',
+                      height: '16px',
+                      background: 'linear-gradient(180deg, #3b82f6, #60a5fa)',
+                      borderRadius: '2px',
+                      animation: `${subtleGlow} 2s ease-in-out infinite`,
+                    },
+                  }),
                 }}
               >
                 {label}

@@ -1,7 +1,7 @@
 # Scheduling App
 
 ## Overview
-This web app allows users to create, manage, and save four-year class schedules for high school students. Students can plan their classes over four years, track credit fulfillment in real time, and save multiple plans for comparison. Admins can view all student schedules and provide annotations to flag conflicts or suggest improvements.
+This web app allows users to create, manage, and save four-year class schedules for high school students. Students can plan their classes over four years, track credit fulfillment in real time, and save multiple plans for comparison. Admins can view all student schedules and provide annotations to flag conflicts or suggest improvements. 
 
 ## Implementation
 The frontend of this app is built with **React** and **Tailwind CSS**. The backend is implemented in **Node.js** with **Express** and uses **PostgreSQL** for data storage. User authentication is handled via **Google OAuth**, supporting both students and admin roles with different access privileges.

@@ -42,6 +42,10 @@ export default function AdminViewAllPlans() {
       });
   }, []);
 
+  const viewStudentPlanner = (studentEmail) => {
+    window.location.href = `/planner?counselorMode=true&studentId=${studentEmail}`;
+  }
+
   const fetchComments = async (planId) => {
     setComments([]);
     try {
@@ -105,6 +109,7 @@ export default function AdminViewAllPlans() {
         px: 2,
         py: 8,
         fontFamily: "'Inter', sans-serif",
+        background: 'linear-gradient(180deg, #0f172a 0%, #1c2333 100%)',
       }}
     >
       <Typography
@@ -212,6 +217,27 @@ export default function AdminViewAllPlans() {
             }}
           >
             Close
+          </Button>
+          <Button
+            variant="outlined"
+            fullWidth
+            onClick={() => {
+              viewStudentPlanner(selectedEmail)
+            }}
+            sx={{
+              mt: 2,
+              borderRadius: 9999,
+              textTransform: 'none',
+              borderColor: 'green', // change to any color (theme color or hex)
+              color: 'green',        // change to match or contrast the border
+              '&:hover': {
+                borderColor: 'darkgreen',
+                color: 'darkgreen',
+                backgroundColor: 'rgba(0, 0, 0, 0.04)', // optional hover bg
+              },
+            }}
+          >
+            Edit Schedules
           </Button>
         </DialogContent>
       </Dialog>

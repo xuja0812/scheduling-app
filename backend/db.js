@@ -2,7 +2,20 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL, 
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false },
+});
+
+pool.on('error', (err) => {
+  console.error('Database pool error:', err);
+});
+
+/*
+*  Error handling for database connection issues
+*/
+pool.on('connect', (client) => {
+  client.on('error', (err) => {
+    console.error('Database client error:', err);
+  });
 });
 
 console.log('Postgres Pool Config:', {
@@ -39,6 +52,7 @@ async function initDB() {
     `);
 
     console.log("Inserting users...");
+    
     // Insert users
     const users = [
       ['google-id-1', 'Alice Admin', 'alice@school.edu', 'admin'],
