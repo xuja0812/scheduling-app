@@ -207,7 +207,7 @@ export default function FourYearPlanner() {
     const urlParams = new URLSearchParams(window.location.search);
     const counselorMode = urlParams.get('counselorMode') === 'true';
     const studentId = urlParams.get('studentId');
-    const endpoint = counselorMode ? 'plans-student' : 'plans';
+    const endpoint = counselorMode ? 'admin/plans' : 'plans';
 
     fetch(`${backendUrl}/api/${endpoint}`, { credentials: 'include', headers: { 'student-email': studentId } })
       .then((res) => {

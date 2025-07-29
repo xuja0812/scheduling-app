@@ -228,12 +228,12 @@ export default function AdminViewAllPlans() {
               mt: 2,
               borderRadius: 9999,
               textTransform: 'none',
-              borderColor: 'green', // change to any color (theme color or hex)
-              color: 'green',        // change to match or contrast the border
+              borderColor: 'green', 
+              color: 'green',      
               '&:hover': {
                 borderColor: 'darkgreen',
                 color: 'darkgreen',
-                backgroundColor: 'rgba(0, 0, 0, 0.04)', // optional hover bg
+                backgroundColor: 'rgba(0, 0, 0, 0.04)',
               },
             }}
           >

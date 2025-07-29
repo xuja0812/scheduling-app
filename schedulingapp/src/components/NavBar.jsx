@@ -28,7 +28,9 @@ export default function NavBar() {
       { label: 'Schedule', to: `/planner?studentId=${user.email}` },
       { label: 'Catalog', to: '/classes' },
       { label: 'Dashboard', to: '/dashboard' },
-      ...(user.role === 'admin' ? [{ label: 'Admin', to: '/all' }] : []),
+      ...(user.role === 'admin' ? [{ label: 'Admin', to: '/all' }, { label: 'Analytics', to: '/analytics' }] : []),
+      // { label: 'Resolve Conflicts', to: '/conflicts' },
+      { label: 'Account', to: '/account'},
       { label: 'Sign out', to: '/leave' },
     ]
     : [{ label: 'Sign in', to: '/' }];

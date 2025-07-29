@@ -328,7 +328,7 @@ app.get('/me', (req, res) => {
  * Retrieves all schedules for a student based on their email
  * Does not rely on sessions
  */
-app.get('/api/plans-student', async (req, res) => {
+app.get('/api/admin/plans', async (req, res) => {
   logReq(req);
   try {
     const email = req.get('student-email');
@@ -449,7 +449,7 @@ app.post('/api/plans', async (req, res) => {
  * Updates a plan for a student when they're in 
  * the same WebSockets room
  */
-app.put('/api/plan-student/:planId', async (req, res) => {
+app.put('/api/admin/plans/:planId', async (req, res) => {
   logReq(req);
   const { planId } = req.params;
   const { name } = req.body;
@@ -519,7 +519,7 @@ app.put('/api/plans/:planId', async (req, res) => {
  * Updates a plan's courses for a student when they're 
  * in the same WebSockets room
  */
-app.put('/api/plans-student/:planId/courses', async (req, res) => {
+app.put('/api/admin/plans/:planId/courses', async (req, res) => {
   logReq(req);
   const { planId } = req.params;
   const { courses, name } = req.body;
@@ -611,7 +611,7 @@ app.put('/api/plans/:planId/courses', async (req, res) => {
  * Deletes a plan based on planId for a certain student email
  * Does not rely on sessions
  */
-app.delete('/api/plans-student/:planId', async (req, res) => {
+app.delete('/api/admin/plans/:planId', async (req, res) => {
   logReq(req);
   const { planId } = req.params;
 
@@ -740,6 +740,11 @@ app.get('/api/admin/comments/:planId', async (req, res) => {
   }
 });
 
+/**
+ * ALL GET
+ * 
+ * Gets all comments for a plan
+ */
 app.get('/api/plans/:planId/comments', async (req, res) => {
   logReq(req);
   if (!req.isAuthenticated()) {
@@ -774,9 +779,9 @@ app.get('/api/plans/:planId/comments', async (req, res) => {
 });
 
 /**
- * COUNSELOR POST
+ * ALL POST
  * 
- * Adds a comment to a certain plan on the admin page
+ * Adds a comment to a certain plan
  */
 app.post('/api/plans/:planId/comments', async (req, res) => {
   logReq(req);
@@ -820,6 +825,27 @@ app.post('/check-conflicts', async (req, res) => {
       hasConflicts: conflicts.length > 0,
       conflicts: suggestions
     })
+  } catch (err) {
+    res.status(500).json({ error: err });
+  }
+});
+
+/**
+ * ONGOING: analytics
+ */
+app.get('/analytics', async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        class_code,
+        COUNT(*) as enrollment_count
+      FROM plan_courses
+      GROUP BY class_code
+      ORDER BY enrollment_count DESC;
+    `;
+
+    const result = await pool.query(query);
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err });
   }

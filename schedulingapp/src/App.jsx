@@ -6,6 +6,9 @@ import FourYearPlanner from './pages/FourYearPlanner';
 import YearClassesList from './pages/YearClassesList';
 import Logout from './pages/LogoutPage';
 import AdminViewAllPlans from './pages/AdminViewAllPlans';
+import ScheduleConflict from './pages/ScheduleConflict';
+import Analytics from './pages/Analytics';
+import Account from './pages/Account';
 
 function App() {
   return (
@@ -18,6 +21,9 @@ function App() {
         <Route path="/classes" element={<YearClassesList />} />
         <Route path="/leave" element={<Logout />} />
         <Route path="/all" element={<AdminViewAllPlans />} />
+        <Route path="/conflicts" element={<ScheduleConflict />} />
+        <Route path="/analytics" element={<Analytics />} />
+        <Route path="/account" element={<Account />} />
       </Routes>
     </div>
   );
