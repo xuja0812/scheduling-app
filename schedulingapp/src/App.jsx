@@ -1,14 +1,14 @@
-import { Routes, Route } from 'react-router-dom';
-import NavBar from './components/NavBar';
-import LoginPage from './pages/LoginPage';
-import Dashboard from './pages/Dashboard';
-import FourYearPlanner from './pages/FourYearPlanner';
-import YearClassesList from './pages/YearClassesList';
-import Logout from './pages/LogoutPage';
-import AdminViewAllPlans from './pages/AdminViewAllPlans';
-import ScheduleConflict from './pages/ScheduleConflict';
-import Analytics from './pages/Analytics';
-import Account from './pages/Account';
+import { Routes, Route } from "react-router-dom";
+import NavBar from "./components/NavBar";
+import LoginPage from "./pages/LoginPage";
+import Dashboard from "./pages/Dashboard";
+import FourYearPlanner from "./pages/FourYearPlanner";
+import YearClassesList from "./pages/YearClassesList";
+import Logout from "./pages/LogoutPage";
+import AdminViewAllPlans from "./pages/AdminViewAllPlans";
+import ScheduleConflict from "./pages/ScheduleConflict";
+import Analytics from "./pages/Analytics";
+import Account from "./pages/Account";
 
 function App() {
   return (

@@ -11,7 +11,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { keyframes } from '@mui/system';
+import { keyframes } from "@mui/system";
 
 const subtleGlow = keyframes`
   0%, 100% { opacity: 0.9; }
@@ -24,28 +24,28 @@ const fadeIn = keyframes`
 `;
 
 export default function Account() {
+  const [classes, setClasses] = useState([]);
 
-    const [classes, setClasses] = useState([]);
+  const backendUrl =
+    import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+  // TODO: useEffect hook for first render that retrieves
+  // a user's past saved classes
 
-    // TODO: useEffect hook for first render that retrieves
-    // a user's past saved classes
-
-    const handleSave = async () => {
-        // classes should already be saved at this point
-        const res = await fetch(`${backendUrl}/api/update-account`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              planId: selectedPlan.planId,
-              comment: adminComment,
-            }),
-          });
-    }
+  const handleSave = async () => {
+    // classes should already be saved at this point
+    const res = await fetch(`${backendUrl}/api/update-account`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        planId: selectedPlan.planId,
+        comment: adminComment,
+      }),
+    });
+  };
 
   return (
     <Box
@@ -78,9 +78,7 @@ export default function Account() {
           position: "relative",
           transition: "all 0.2s ease-out",
         }}
-      >
-        
-      </Paper>
+      ></Paper>
     </Box>
   );
 }

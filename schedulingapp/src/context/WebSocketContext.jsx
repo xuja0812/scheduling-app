@@ -1,40 +1,47 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from "react";
 
 const WebSocketContext = createContext(null);
 
 export const useWebSocket = () => useContext(WebSocketContext);
 
 export const WebSocketProvider = ({ children }) => {
-    const [socket, setSocket] = useState(null);
-    const [isConnected, setIsConnected] = useState(false);
+  const [socket, setSocket] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
 
-    useEffect(() => {
-        const ws = new WebSocket('ws://localhost:4000');
+  useEffect(() => {
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsHost =
+      process.env.NODE_ENV === "production"
+        ? "scheduling-app-backend-k9zg.onrender.com"
+        : "localhost:4000";
+    const wsUrl = `${wsProtocol}//${wsHost}`;
 
-        ws.onopen = () => {
-            console.log('WebSocket connected');
-            setSocket(ws);
-            setIsConnected(true);
-        };
+    const ws = new WebSocket(wsUrl);
 
-        ws.onerror = (error) => {
-            console.log('WebSocket error:', error);
-        };
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+      setSocket(ws);
+      setIsConnected(true);
+    };
 
-        ws.onclose = () => {
-            console.log('WebSocket disconnected');
-            setSocket(null);
-            setIsConnected(false);
-        };
+    ws.onerror = (error) => {
+      console.log("WebSocket error:", error);
+    };
 
-        return () => {
-            ws.close();
-        };
-    }, []);
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+      setSocket(null);
+      setIsConnected(false);
+    };
 
-    return (
-        <WebSocketContext.Provider value={{ socket, isConnected }}>
-            {children}
-        </WebSocketContext.Provider>
-    );
+    return () => {
+      ws.close();
+    };
+  }, []);
+
+  return (
+    <WebSocketContext.Provider value={{ socket, isConnected }}>
+      {children}
+    </WebSocketContext.Provider>
+  );
 };

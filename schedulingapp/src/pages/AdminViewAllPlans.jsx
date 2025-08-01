@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import {
   Avatar,
   Box,
@@ -9,34 +9,35 @@ import {
   Paper,
   Stack,
   TextField,
-  Typography
-} from '@mui/material';
+  Typography,
+} from "@mui/material";
 
 export default function AdminViewAllPlans() {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [adminComment, setAdminComment] = useState('');
+  const [adminComment, setAdminComment] = useState("");
   const [commentStatus, setCommentStatus] = useState(null);
   const [comments, setComments] = useState([]);
   const [selectedEmail, setSelectedEmail] = useState(null);
 
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+  const backendUrl =
+    import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
   useEffect(() => {
     fetch(`${backendUrl}/api/admin/all-plans`, {
-      credentials: 'include',
+      credentials: "include",
     })
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch plans');
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch plans");
         return res.json();
       })
-      .then(data => {
+      .then((data) => {
         setPlans(data);
         setLoading(false);
       })
-      .catch(err => {
+      .catch((err) => {
         setError(err.message);
         setLoading(false);
       });
@@ -44,15 +45,15 @@ export default function AdminViewAllPlans() {
 
   const viewStudentPlanner = (studentEmail) => {
     window.location.href = `/planner?counselorMode=true&studentId=${studentEmail}`;
-  }
+  };
 
   const fetchComments = async (planId) => {
     setComments([]);
     try {
       const res = await fetch(`${backendUrl}/api/admin/comments/${planId}`, {
-        credentials: 'include',
+        credentials: "include",
       });
-      if (!res.ok) throw new Error('Failed to fetch comments');
+      if (!res.ok) throw new Error("Failed to fetch comments");
       const data = await res.json();
       setComments(data);
     } catch (err) {
@@ -66,25 +67,25 @@ export default function AdminViewAllPlans() {
 
     try {
       const res = await fetch(`${backendUrl}/api/admin/comment`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        credentials: 'include',
+        credentials: "include",
         body: JSON.stringify({
           planId: selectedPlan.planId,
           comment: adminComment,
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to submit comment');
+      if (!res.ok) throw new Error("Failed to submit comment");
 
-      setCommentStatus('Comment saved!');
-      setAdminComment('');
+      setCommentStatus("Comment saved!");
+      setAdminComment("");
       fetchComments(selectedPlan.planId);
     } catch (err) {
       console.error(err);
-      setCommentStatus('Error saving comment.');
+      setCommentStatus("Error saving comment.");
     }
   };
 
@@ -96,58 +97,68 @@ export default function AdminViewAllPlans() {
     return acc;
   }, {});
 
-  if (loading) return <div className="text-center mt-10 text-white font-semibold">Loading...</div>;
-  if (error) return <div className="text-center mt-10 text-red-400 font-semibold">Error: {error}</div>;
+  if (loading)
+    return (
+      <div className="text-center mt-10 text-white font-semibold">
+        Loading...
+      </div>
+    );
+  if (error)
+    return (
+      <div className="text-center mt-10 text-red-400 font-semibold">
+        Error: {error}
+      </div>
+    );
 
   return (
     <Box
       sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
         px: 2,
         py: 8,
         fontFamily: "'Inter', sans-serif",
-        background: 'linear-gradient(180deg, #0f172a 0%, #1c2333 100%)',
+        background: "linear-gradient(180deg, #0f172a 0%, #1c2333 100%)",
       }}
     >
       <Typography
         variant="h4"
         sx={{
           mb: 4,
-          color: '#ffffff',
+          color: "#ffffff",
           fontWeight: 700,
-          textAlign: 'center',
+          textAlign: "center",
           mt: 12,
         }}
       >
         All Student Plans
       </Typography>
 
-      <Stack spacing={2} sx={{ width: '100%', maxWidth: 600 }}>
+      <Stack spacing={2} sx={{ width: "100%", maxWidth: 600 }}>
         {Object.entries(groupedPlans).map(([email]) => (
           <Paper
             key={email}
             elevation={4}
             onClick={() => setSelectedEmail(email)}
             sx={{
-              display: 'flex',
-              alignItems: 'center',
+              display: "flex",
+              alignItems: "center",
               gap: 2,
               p: 2,
               borderRadius: 3,
-              backgroundColor: '#1e293b',
-              color: '#e2e8f0',
-              border: '1px solid #334155',
-              cursor: 'pointer',
-              transition: '0.2s ease',
-              '&:hover': {
-                backgroundColor: '#334155',
+              backgroundColor: "#1e293b",
+              color: "#e2e8f0",
+              border: "1px solid #334155",
+              cursor: "pointer",
+              transition: "0.2s ease",
+              "&:hover": {
+                backgroundColor: "#334155",
               },
             }}
           >
-            <Avatar sx={{ bgcolor: '#0ea5e9', fontWeight: 'bold' }}>
+            <Avatar sx={{ bgcolor: "#0ea5e9", fontWeight: "bold" }}>
               {email.charAt(0).toUpperCase()}
             </Avatar>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -166,43 +177,53 @@ export default function AdminViewAllPlans() {
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle sx={{ fontWeight: 700, fontSize: '1.25rem' }}>
+        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.25rem" }}>
           Plans by {selectedEmail}
         </DialogTitle>
         <DialogContent dividers>
-          {selectedEmail && groupedPlans[selectedEmail].map(plan => (
-            <Paper
-              key={plan.planId}
-              elevation={2}
-              onClick={() => {
-                setSelectedPlan(plan);
-                setAdminComment('');
-                setCommentStatus(null);
-                fetchComments(plan.planId);
-              }}
-              sx={{
-                mb: 2,
-                p: 2,
-                borderRadius: 2,
-                backgroundColor: '#f1f5f9',
-                '&:hover': {
-                  backgroundColor: '#e2e8f0',
-                },
-                cursor: 'pointer',
-              }}
-            >
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#1e293b' }}>
-                {plan.planName}
-              </Typography>
-              <ul style={{ marginTop: 4, color: '#475569', paddingLeft: '1rem' }}>
-                {plan.courses.map((course, idx) => (
-                  <li key={idx}>
-                    {course.class_code} - {course.year} {course.semester}
-                  </li>
-                ))}
-              </ul>
-            </Paper>
-          ))}
+          {selectedEmail &&
+            groupedPlans[selectedEmail].map((plan) => (
+              <Paper
+                key={plan.planId}
+                elevation={2}
+                onClick={() => {
+                  setSelectedPlan(plan);
+                  setAdminComment("");
+                  setCommentStatus(null);
+                  fetchComments(plan.planId);
+                }}
+                sx={{
+                  mb: 2,
+                  p: 2,
+                  borderRadius: 2,
+                  backgroundColor: "#f1f5f9",
+                  "&:hover": {
+                    backgroundColor: "#e2e8f0",
+                  },
+                  cursor: "pointer",
+                }}
+              >
+                <Typography
+                  variant="subtitle1"
+                  sx={{ fontWeight: 600, color: "#1e293b" }}
+                >
+                  {plan.planName}
+                </Typography>
+                <ul
+                  style={{
+                    marginTop: 4,
+                    color: "#475569",
+                    paddingLeft: "1rem",
+                  }}
+                >
+                  {plan.courses.map((course, idx) => (
+                    <li key={idx}>
+                      {course.class_code} - {course.year} {course.semester}
+                    </li>
+                  ))}
+                </ul>
+              </Paper>
+            ))}
           <Button
             variant="outlined"
             fullWidth
@@ -213,7 +234,7 @@ export default function AdminViewAllPlans() {
             sx={{
               mt: 2,
               borderRadius: 9999,
-              textTransform: 'none',
+              textTransform: "none",
             }}
           >
             Close
@@ -222,18 +243,18 @@ export default function AdminViewAllPlans() {
             variant="outlined"
             fullWidth
             onClick={() => {
-              viewStudentPlanner(selectedEmail)
+              viewStudentPlanner(selectedEmail);
             }}
             sx={{
               mt: 2,
               borderRadius: 9999,
-              textTransform: 'none',
-              borderColor: 'green', 
-              color: 'green',      
-              '&:hover': {
-                borderColor: 'darkgreen',
-                color: 'darkgreen',
-                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              textTransform: "none",
+              borderColor: "green",
+              color: "green",
+              "&:hover": {
+                borderColor: "darkgreen",
+                color: "darkgreen",
+                backgroundColor: "rgba(0, 0, 0, 0.04)",
               },
             }}
           >
@@ -248,14 +269,27 @@ export default function AdminViewAllPlans() {
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle sx={{ fontWeight: 700, fontSize: '1.25rem' }}>
-          {selectedPlan?.planName}{' '}
-          <Typography component="span" sx={{ fontSize: '0.9rem', color: 'gray', fontWeight: 400 }}>
+        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.25rem" }}>
+          {selectedPlan?.planName}{" "}
+          <Typography
+            component="span"
+            sx={{ fontSize: "0.9rem", color: "gray", fontWeight: 400 }}
+          >
             (by {selectedPlan?.studentEmail})
           </Typography>
         </DialogTitle>
-        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column' }}>
-          <ul style={{ color: '#475569', marginBottom: '1rem', paddingLeft: '1rem', lineHeight: 1.6 }}>
+        <DialogContent
+          dividers
+          sx={{ display: "flex", flexDirection: "column" }}
+        >
+          <ul
+            style={{
+              color: "#475569",
+              marginBottom: "1rem",
+              paddingLeft: "1rem",
+              lineHeight: 1.6,
+            }}
+          >
             {selectedPlan?.courses.map((course, idx) => (
               <li key={idx}>
                 {course.class_code} - {course.year} {course.semester}
@@ -269,42 +303,56 @@ export default function AdminViewAllPlans() {
 
           <Box
             sx={{
-              backgroundColor: '#f8fafc',
+              backgroundColor: "#f8fafc",
               padding: 2,
               borderRadius: 2,
-              border: '1px solid #cbd5e1',
+              border: "1px solid #cbd5e1",
               mb: 2,
               maxHeight: 200,
-              overflowY: 'auto',
+              overflowY: "auto",
             }}
           >
             {comments.length === 0 ? (
-              <Typography variant="body2" color="textSecondary" fontStyle="italic">
+              <Typography
+                variant="body2"
+                color="textSecondary"
+                fontStyle="italic"
+              >
                 No comments yet.
               </Typography>
             ) : (
               <Stack spacing={1}>
-                {comments.map(comment => (
+                {comments.map((comment) => (
                   <Paper
                     key={comment.id}
                     elevation={0}
                     sx={{
                       padding: 2,
-                      display: 'flex',
+                      display: "flex",
                       gap: 2,
                       borderRadius: 2,
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #e2e8f0',
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #e2e8f0",
                     }}
                   >
-                    <Avatar sx={{ bgcolor: '#0f766e', fontWeight: 'bold' }}>
+                    <Avatar sx={{ bgcolor: "#0f766e", fontWeight: "bold" }}>
                       {comment.author?.charAt(0).toUpperCase()}
                     </Avatar>
                     <div>
-                      <Typography variant="subtitle2" sx={{ color: '#1e293b', fontWeight: 600 }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ color: "#1e293b", fontWeight: 600 }}
+                      >
                         {comment.author}
                       </Typography>
-                      <Typography variant="body2" sx={{ color: '#475569', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: "#475569",
+                          wordBreak: "break-word",
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
                         {comment.text}
                       </Typography>
                     </div>
@@ -320,10 +368,10 @@ export default function AdminViewAllPlans() {
             rows={4}
             fullWidth
             value={adminComment}
-            onChange={e => setAdminComment(e.target.value)}
+            onChange={(e) => setAdminComment(e.target.value)}
             margin="normal"
             sx={{
-              '& .MuiInputBase-root': {
+              "& .MuiInputBase-root": {
                 borderRadius: 2,
               },
             }}
@@ -336,7 +384,7 @@ export default function AdminViewAllPlans() {
             sx={{
               mt: 1,
               borderRadius: 9999,
-              textTransform: 'none',
+              textTransform: "none",
               fontWeight: 500,
             }}
           >
@@ -346,7 +394,7 @@ export default function AdminViewAllPlans() {
           <Button
             variant="outlined"
             fullWidth
-            sx={{ mt: 4, borderRadius: 9999, textTransform: 'none' }}
+            sx={{ mt: 4, borderRadius: 9999, textTransform: "none" }}
             onClick={() => setSelectedPlan(null)}
           >
             Close

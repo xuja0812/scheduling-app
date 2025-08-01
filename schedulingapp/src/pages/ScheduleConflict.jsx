@@ -11,7 +11,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { keyframes } from '@mui/system';
+import { keyframes } from "@mui/system";
 
 const subtleGlow = keyframes`
   0%, 100% { opacity: 0.9; }
@@ -55,9 +55,7 @@ export default function ScheduleConflict() {
           position: "relative",
           transition: "all 0.2s ease-out",
         }}
-      >
-        
-      </Paper>
+      ></Paper>
     </Box>
   );
 }

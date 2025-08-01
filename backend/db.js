@@ -1,33 +1,33 @@
-const { Pool } = require('pg');
+const { Pool } = require("pg");
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
+  connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-pool.on('error', (err) => {
-  console.error('Database pool error:', err);
+pool.on("error", (err) => {
+  console.error("Database pool error:", err);
 });
 
 /*
-*  Error handling for database connection issues
-*/
-pool.on('connect', (client) => {
-  client.on('error', (err) => {
-    console.error('Database client error:', err);
+ *  Error handling for database connection issues
+ */
+pool.on("connect", (client) => {
+  client.on("error", (err) => {
+    console.error("Database client error:", err);
   });
 });
 
-console.log('Postgres Pool Config:', {
+console.log("Postgres Pool Config:", {
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled',
+  ssl: process.env.NODE_ENV === "production" ? "enabled" : "disabled",
 });
 
 async function initDB() {
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
     console.log("Beginning seeding...");
 
     await client.query(`
@@ -52,11 +52,11 @@ async function initDB() {
     `);
 
     console.log("Inserting users...");
-    
+
     // Insert users
     const users = [
-      ['google-id-1', 'Alice Admin', 'alice@school.edu', 'admin'],
-      ['google-id-2', 'Bob Student', 'bob@school.edu', 'student']
+      ["google-id-1", "Alice Admin", "alice@school.edu", "admin"],
+      ["google-id-2", "Bob Student", "bob@school.edu", "student"],
     ];
 
     for (const [google_id, name, email, role] of users) {
@@ -80,12 +80,12 @@ async function initDB() {
 
     // Insert classes
     const classes = [
-      ['ENG101', 'English I', 'English', 'regular', 1],
-      ['ENG201', 'English II', 'English', 'advanced', 1],
-      ['MATH101', 'Algebra I', 'Math', 'regular', 1],
-      ['MATH201', 'Geometry', 'Math', 'advanced', 1],
-      ['SCI101', 'Biology', 'Science', 'regular', 1],
-      ['SCI201', 'Chemistry', 'Science', 'advanced', 1],
+      ["ENG101", "English I", "English", "regular", 1],
+      ["ENG201", "English II", "English", "advanced", 1],
+      ["MATH101", "Algebra I", "Math", "regular", 1],
+      ["MATH201", "Geometry", "Math", "advanced", 1],
+      ["SCI101", "Biology", "Science", "regular", 1],
+      ["SCI201", "Chemistry", "Science", "advanced", 1],
     ];
 
     for (const [code, name, subject, track_level, credits] of classes) {
@@ -107,12 +107,12 @@ async function initDB() {
 
     // Insert track requirements
     const trackReqs = [
-      ['English', 'regular', 'ENG101'],
-      ['English', 'advanced', 'ENG201'],
-      ['Math', 'regular', 'MATH101'],
-      ['Math', 'advanced', 'MATH201'],
-      ['Science', 'regular', 'SCI101'],
-      ['Science', 'advanced', 'SCI201'],
+      ["English", "regular", "ENG101"],
+      ["English", "advanced", "ENG201"],
+      ["Math", "regular", "MATH101"],
+      ["Math", "advanced", "MATH201"],
+      ["Science", "regular", "SCI101"],
+      ["Science", "advanced", "SCI201"],
     ];
 
     for (const [subject, track_level, required_class_code] of trackReqs) {
@@ -132,7 +132,7 @@ async function initDB() {
       );
     `);
 
-    console.log()
+    console.log();
 
     // Create plans table
     await client.query(`
@@ -165,20 +165,20 @@ async function initDB() {
       );
     `);
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
-    pool.query('SELECT NOW()', (err, res) => {
+    pool.query("SELECT NOW()", (err, res) => {
       if (err) {
-        console.error('Error connecting to Postgres:', err);
+        console.error("Error connecting to Postgres:", err);
       } else {
-        console.log('Postgres connection test OK, server time:', res.rows[0]);
+        console.log("Postgres connection test OK, server time:", res.rows[0]);
       }
     });
 
-    console.log('Database initialized successfully.');
+    console.log("Database initialized successfully.");
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Error initializing database:', err);
+    await client.query("ROLLBACK");
+    console.error("Error initializing database:", err);
     throw err;
   } finally {
     client.release();
