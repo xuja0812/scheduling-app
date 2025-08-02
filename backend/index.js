@@ -6,6 +6,7 @@ const cookieParser = require("cookie-parser");
 const { pool } = require("./db");
 const { v4: uuidv4 } = require("uuid");
 const http = require("http");
+const jwt = require("jsonwebtoken");
 const WebSocket = require("ws");
 const ScheduleOptimizer = require("./services/scheduleOptimizer");
 require("dotenv").config();
@@ -33,22 +34,8 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.set("trust proxy", 1);
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
-    },
-  })
-);
 
 app.use(passport.initialize());
-app.use(passport.session());
 
 /**
  * Standardized logging structure
@@ -60,6 +47,27 @@ function logReq(req) {
     }`
   );
 }
+
+/**
+ * JWT middleware
+ */
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = (authHeader && authHeader.split(" ")[1]) || req.cookies?.token;
+
+  if (!token) {
+    return res.status(401).json({ error: "Access token required" });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: "Invalid or expired token" });
+    }
+
+    req.user = user;
+    next();
+  });
+};
 
 /**
  * Creating WebSockets server and connections
@@ -106,9 +114,9 @@ wss.on("connection", (ws) => {
           })
         );
       } else if (type === "chat-message") {
-      /**
-       * Chat message (TESTING ONLY)
-       */
+        /**
+         * Chat message (TESTING ONLY)
+         */
         console.log(
           `Chat message from ${ws.userType} ${ws.userId} in room ${ws.studentId}`
         );
@@ -143,9 +151,9 @@ wss.on("connection", (ws) => {
           );
         }
       } else if (type === "plans-update") {
-      /**
-       * Update a plan by adding a course or something else
-       */
+        /**
+         * Update a plan by adding a course or something else
+         */
         const parsedMessage = JSON.parse(message.toString());
         if (ws.studentId && rooms.has(ws.studentId)) {
           const roomClients = rooms.get(ws.studentId);
@@ -166,9 +174,9 @@ wss.on("connection", (ws) => {
           });
         }
       } else if (type === "comments-update") {
-      /**
-       * Update a plan's comments
-       */
+        /**
+         * Update a plan's comments
+         */
         const parsedMessage = JSON.parse(message.toString());
         if (ws.studentId && rooms.has(ws.studentId)) {
           const roomClients = rooms.get(ws.studentId);
@@ -221,13 +229,8 @@ module.exports = { app, pool };
  *
  * Allows the counselor to see all current student plans
  */
-app.get("/api/admin/all-plans", async (req, res) => {
+app.get("/api/admin/all-plans", authenticateToken, async (req, res) => {
   logReq(req);
-
-  if (!req.isAuthenticated() || req.user.role !== "admin") {
-    console.log("Unauthorized access attempt to /api/admin/all-plans");
-    return res.status(403).json({ error: "Forbidden" });
-  }
 
   const query = `
     SELECT plans.id as plan_id, plans.name as plan_name, users.email as student_email,
@@ -261,7 +264,6 @@ app.get("/api/admin/all-plans", async (req, res) => {
     });
 
     const allPlans = Object.values(plansMap);
-    console.log("All plans:", allPlans);
     res.json(allPlans);
   } catch (err) {
     console.error("Error fetching all plans:", err.message);
@@ -282,6 +284,7 @@ app.get(
   },
   passport.authenticate("google", {
     scope: ["profile", "email"],
+    session: false
   })
 );
 
@@ -300,19 +303,17 @@ app.get(
   passport.authenticate("google", {
     // failureRedirect: 'http://localhost:5173/login',
     failureRedirect: "https://scheduler-two-rho.vercel.app",
+    session: false
   }),
   (req, res) => {
-    console.log(`User logged in: ${req.user.email}`);
-    console.log("trying to redirect to local");
-    req.session.save((err) => {
-      if (err) {
-        console.error("Session save error:", err);
-        return res.redirect("https://scheduler-two-rho.vercel.app");
-        // return res.redirect('http://localhost:81');
-      }
-      res.redirect("https://scheduler-two-rho.vercel.app/dashboard");
-      // res.redirect('http://localhost:81/dashboard')
+    const { token } = req.user;
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 24 * 60 * 60 * 1000,
     });
+    res.redirect(`https://scheduler-two-rho.vercel.app/dashboard`);
+    // res.redirect("http://localhost:81/dashboard");
   }
 );
 
@@ -341,15 +342,10 @@ app.get("/logout", (req, res) => {
  *
  * Retrieves current user's info
  */
-app.get("/me", (req, res) => {
+app.get("/me", authenticateToken, (req, res) => {
   logReq(req);
-  if (req.isAuthenticated()) {
-    console.log(`Current user: ${req.user.email}`);
-    res.json({ user: req.user });
-  } else {
-    console.log("User not authenticated for /me");
-    res.status(401).json({ error: "Not authenticated" });
-  }
+  console.log(`Current user: ${req.user.email}`);
+  res.json({ user: req.user });
 });
 
 /**
@@ -358,7 +354,7 @@ app.get("/me", (req, res) => {
  * Retrieves all schedules for a student based on their email
  * Does not rely on sessions
  */
-app.get("/api/admin/plans", async (req, res) => {
+app.get("/api/admin/plans", authenticateToken, async (req, res) => {
   logReq(req);
   try {
     const email = req.get("student-email");
@@ -388,17 +384,12 @@ app.get("/api/admin/plans", async (req, res) => {
  * Retrieves all schedules for the current student
  * Relies on session
  */
-app.get("/api/plans", async (req, res) => {
+app.get("/api/plans", authenticateToken, async (req, res) => {
   logReq(req);
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
   try {
     const result = await pool.query("SELECT * FROM plans WHERE user_id = $1", [
       req.user.id,
     ]);
-    console.log(result.rows);
     res.json(result.rows);
   } catch (err) {
     console.error("Error fetching plans:", err.message);
@@ -411,13 +402,9 @@ app.get("/api/plans", async (req, res) => {
  *
  * Retrieves a certain plan based on planId
  */
-app.get("/api/plans/:planId", async (req, res) => {
+app.get("/api/plans/:planId", authenticateToken, async (req, res) => {
   logReq(req);
   const { planId } = req.params;
-
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
 
   try {
     const result = await pool.query(
@@ -436,13 +423,8 @@ app.get("/api/plans/:planId", async (req, res) => {
  *
  * Adds a new plan for a student
  */
-app.post("/api/plans", async (req, res) => {
+app.post("/api/plans", authenticateToken, async (req, res) => {
   logReq(req);
-
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
   const { name, courses } = req.body;
   const planId = uuidv4();
 
@@ -485,7 +467,7 @@ app.post("/api/plans", async (req, res) => {
  * Updates a plan for a student when they're in
  * the same WebSockets room
  */
-app.put("/api/admin/plans/:planId", async (req, res) => {
+app.put("/api/admin/plans/:planId", authenticateToken, async (req, res) => {
   logReq(req);
   const { planId } = req.params;
   const { name } = req.body;
@@ -522,16 +504,10 @@ app.put("/api/admin/plans/:planId", async (req, res) => {
  *
  * Updates a student's own schedule
  */
-app.put("/api/plans/:planId", async (req, res) => {
+app.put("/api/plans/:planId", authenticateToken, async (req, res) => {
   logReq(req);
   const { planId } = req.params;
   const { name } = req.body;
-
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
-  console.log("The name is: ", name);
 
   try {
     const result = await pool.query(
@@ -556,66 +532,69 @@ app.put("/api/plans/:planId", async (req, res) => {
  * Updates a plan's courses for a student when they're
  * in the same WebSockets room
  */
-app.put("/api/admin/plans/:planId/courses", async (req, res) => {
-  logReq(req);
-  const { planId } = req.params;
-  const { courses, name } = req.body;
-  try {
-    const email = req.get("student-email");
-    if (!email) {
-      return res.status(400).json({ error: "Email header required" });
-    }
-    const idResult = await pool.query("SELECT id FROM users WHERE email = $1", [
-      email,
-    ]);
-    if (idResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    const userId = idResult.rows[0].id;
-    const planResult = await pool.query(
-      "SELECT * FROM plans WHERE id = $1 AND user_id = $2",
-      [planId, userId]
-    );
-    if (planResult.rowCount === 0) {
-      return res.status(404).json({ error: "Plan not found or unauthorized" });
-    }
-    await pool.query("DELETE FROM plan_courses WHERE plan_id = $1", [planId]);
-
-    await pool.query("BEGIN");
-    for (const course of courses) {
-      await pool.query(
-        `INSERT INTO plan_courses (plan_id, class_code, year, semester) 
-         VALUES ($1, $2, $3, $4)`,
-        [planId, course.class_code, course.year, course.semester]
+app.put(
+  "/api/admin/plans/:planId/courses",
+  authenticateToken,
+  async (req, res) => {
+    logReq(req);
+    const { planId } = req.params;
+    const { courses, name } = req.body;
+    try {
+      const email = req.get("student-email");
+      if (!email) {
+        return res.status(400).json({ error: "Email header required" });
+      }
+      const idResult = await pool.query(
+        "SELECT id FROM users WHERE email = $1",
+        [email]
       );
+      if (idResult.rows.length === 0) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const userId = idResult.rows[0].id;
+      const planResult = await pool.query(
+        "SELECT * FROM plans WHERE id = $1 AND user_id = $2",
+        [planId, userId]
+      );
+      if (planResult.rowCount === 0) {
+        return res
+          .status(404)
+          .json({ error: "Plan not found or unauthorized" });
+      }
+      await pool.query("DELETE FROM plan_courses WHERE plan_id = $1", [planId]);
+
+      await pool.query("BEGIN");
+      for (const course of courses) {
+        await pool.query(
+          `INSERT INTO plan_courses (plan_id, class_code, year, semester) 
+         VALUES ($1, $2, $3, $4)`,
+          [planId, course.class_code, course.year, course.semester]
+        );
+      }
+      await pool.query("UPDATE plans SET name = $1 WHERE id = $2", [
+        name,
+        planId,
+      ]);
+
+      await pool.query("COMMIT");
+
+      res.json({ message: "Plan courses updated successfully" });
+    } catch (err) {
+      console.error("Error fetching courses:", err.message);
+      res.status(500).json({ error: err });
     }
-    await pool.query("UPDATE plans SET name = $1 WHERE id = $2", [
-      name,
-      planId,
-    ]);
-
-    await pool.query("COMMIT");
-
-    res.json({ message: "Plan courses updated successfully" });
-  } catch (err) {
-    console.error("Error fetching courses:", err.message);
-    res.status(500).json({ error: err });
   }
-});
+);
 
 /**
  * STUDENT PUT
  *
  * Updates a student's scheduled plans
  */
-app.put("/api/plans/:planId/courses", async (req, res) => {
+app.put("/api/plans/:planId/courses", authenticateToken, async (req, res) => {
   logReq(req);
   const { planId } = req.params;
   const { courses, name } = req.body;
-
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
 
   try {
     const planResult = await pool.query(
@@ -656,7 +635,7 @@ app.put("/api/plans/:planId/courses", async (req, res) => {
  * Deletes a plan based on planId for a certain student email
  * Does not rely on sessions
  */
-app.delete("/api/admin/plans/:planId", async (req, res) => {
+app.delete("/api/admin/plans/:planId", authenticateToken, async (req, res) => {
   logReq(req);
   const { planId } = req.params;
 
@@ -699,13 +678,9 @@ app.delete("/api/admin/plans/:planId", async (req, res) => {
  * Deletes a student's plan based on planId
  * Relies on sessions
  */
-app.delete("/api/plans/:planId", async (req, res) => {
+app.delete("/api/plans/:planId", authenticateToken, async (req, res) => {
   logReq(req);
   const { planId } = req.params;
-
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
 
   try {
     const planResult = await pool.query(
@@ -735,11 +710,8 @@ app.delete("/api/plans/:planId", async (req, res) => {
  *
  * Adds a comment to a plan from the admin page
  */
-app.post("/api/admin/comment", async (req, res) => {
+app.post("/api/admin/comment", authenticateToken, async (req, res) => {
   logReq(req);
-  if (!req.isAuthenticated() || req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
 
   const { planId, comment } = req.body;
   if (!planId || !comment) {
@@ -764,11 +736,8 @@ app.post("/api/admin/comment", async (req, res) => {
  *
  * Retrieves commments for the counselor's admin page for a schedule
  */
-app.get("/api/admin/comments/:planId", async (req, res) => {
+app.get("/api/admin/comments/:planId", authenticateToken, async (req, res) => {
   logReq(req);
-  if (!req.isAuthenticated() || req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
 
   const { planId } = req.params;
   try {
@@ -792,11 +761,8 @@ app.get("/api/admin/comments/:planId", async (req, res) => {
  *
  * Gets all comments for a plan
  */
-app.get("/api/plans/:planId/comments", async (req, res) => {
+app.get("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
   logReq(req);
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
 
   const { planId } = req.params;
 
@@ -830,11 +796,8 @@ app.get("/api/plans/:planId/comments", async (req, res) => {
  *
  * Adds a comment to a certain plan
  */
-app.post("/api/plans/:planId/comments", async (req, res) => {
+app.post("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
   logReq(req);
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
 
   const { planId } = req.params;
   const { text } = req.body;
@@ -862,7 +825,7 @@ app.post("/api/plans/:planId/comments", async (req, res) => {
 /**
  * ONGOING: conflict checking
  */
-app.post("/check-conflicts", async (req, res) => {
+app.post("/check-conflicts", authenticateToken, async (req, res) => {
   try {
     const { courses } = req.body;
     const optimizer = new ScheduleOptimizer();
@@ -880,7 +843,7 @@ app.post("/check-conflicts", async (req, res) => {
 /**
  * ONGOING: analytics
  */
-app.get("/analytics", async (req, res) => {
+app.get("/analytics", authenticateToken, async (req, res) => {
   try {
     const query = `
       SELECT 

@@ -73,7 +73,6 @@ export default function FourYearPlanner() {
       })
       .then((data) => {
         setUser(data.user);
-        console.log("The user is:", data.user);
       })
       .catch(() => setUser(null));
   }, []);
@@ -94,8 +93,6 @@ export default function FourYearPlanner() {
           userType: counselorMode ? "counselor" : "student",
         },
       };
-
-      console.log("Joining room with data:", roomData);
       socket.send(JSON.stringify(roomData));
 
       setMessages((prev) => [
@@ -116,7 +113,6 @@ export default function FourYearPlanner() {
     const handleMessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log("Received message:", data);
 
         switch (data.type) {
           case "chat-message":
@@ -242,8 +238,6 @@ export default function FourYearPlanner() {
           sendPlansUpdate(plans);
           return;
         }
-
-        console.log("THE PLANS ARE: ", plansData);
 
         Promise.all(
           plansData.map((plan) =>
@@ -426,8 +420,8 @@ export default function FourYearPlanner() {
     const urlParams = new URLSearchParams(window.location.search);
     const counselorMode = urlParams.get("counselorMode") === "true";
     const studentId = urlParams.get("studentId");
-    const endpoint = counselorMode ? "-student" : "";
-    fetch(`${backendUrl}/api/plans${endpoint}/${activePlan.id}`, {
+    const endpoint = counselorMode ? "admin/" : "";
+    fetch(`${backendUrl}/api/${endpoint}plans/${activePlan.id}`, {
       method: "DELETE",
       credentials: "include",
       headers: { "student-email": studentId },
@@ -489,7 +483,6 @@ export default function FourYearPlanner() {
       );
 
     const planComments = comments[planId];
-    console.log(planComments);
     if (planComments.length === 0)
       return (
         <Typography

@@ -24,7 +24,6 @@ const LogoutPage = () => {
         method: "GET",
         credentials: "include",
       });
-      console.log("logged out");
       window.location.href = "/";
     } catch (error) {
       console.error("Logout failed:", error);

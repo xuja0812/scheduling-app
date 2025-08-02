@@ -48,7 +48,6 @@ export default function Analytics() {
       })
       .then((data) => {
         setClasses(data);
-        console.log(data);
       });
   }, []);
   return (

@@ -185,4 +185,40 @@ async function initDB() {
   }
 }
 
-module.exports = { pool, initDB };
+async function migration() {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    console.log("Beginning seeding...");
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS completed_courses (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        class_name TEXT NOT NULL,
+        year TEXT NOT NULL
+      )
+    `);
+
+    await client.query("COMMIT");
+
+    pool.query("SELECT NOW()", (err, res) => {
+      if (err) {
+        console.error("Error connecting to Postgres:", err);
+      } else {
+        console.log("Postgres connection test OK, server time:", res.rows[0]);
+      }
+    });
+
+    console.log("Database initialized successfully.");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error initializing database:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { pool, initDB, migration };
