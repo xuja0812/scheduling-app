@@ -44,7 +44,7 @@ app.use(passport.initialize());
  */
 const redis = new Redis({
   port: 6379,
-  host: process.env.REDIS_HOST || '127.0.0.1',
+  host: process.env.REDIS_HOST || "127.0.0.1",
 });
 
 redis.on("connect", () => {
@@ -361,8 +361,8 @@ app.get(
       secure: process.env.NODE_ENV === "production",
       maxAge: 24 * 60 * 60 * 1000,
     });
-    res.redirect(`https://scheduler-two-rho.vercel.app/dashboard`);
-    // res.redirect("http://localhost:81/dashboard");
+    // res.redirect(`https://scheduler-two-rho.vercel.app/dashboard`);
+    res.redirect("http://localhost:81/dashboard");
   }
 );
 
@@ -371,19 +371,11 @@ app.get(
  *
  * Logs user out
  */
-app.get("/logout", (req, res) => {
+app.get("/api/logout", (req, res) => {
   logReq(req);
-  req.logout(() => {
-    req.session.destroy((err) => {
-      if (err) {
-        console.error("Session destroy error:", err);
-        return res.status(500).json({ error: "Failed to log out" });
-      }
-      console.log("User logged out");
-      res.clearCookie("connect.sid");
-      res.json({ message: "Logged out successfully" });
-    });
-  });
+  res.clearCookie("token");
+  console.log("User logged out");
+  res.json({ message: "Logged out successfully" });
 });
 
 /**
@@ -391,7 +383,7 @@ app.get("/logout", (req, res) => {
  *
  * Retrieves current user's info
  */
-app.get("/me", authenticateToken, cache(300), (req, res) => {
+app.get("/api/me", authenticateToken, cache(300), (req, res) => {
   logReq(req);
   res.json({ user: req.user });
 });
@@ -892,7 +884,7 @@ app.post("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
 /**
  * ONGOING: analytics
  */
-app.get("/analytics", authenticateToken, cache(300), async (req, res) => {
+app.get("/api/analytics", authenticateToken, cache(300), async (req, res) => {
   try {
     const query = `
       SELECT 
@@ -943,7 +935,7 @@ app.get("/api/classes", authenticateToken, cache(300), async (req, res) => {
 
 /**
  * ALL POST
- * 
+ *
  * Add a completed course for a user
  */
 app.post("/api/completed-courses", authenticateToken, async (req, res) => {
@@ -967,7 +959,7 @@ app.post("/api/completed-courses", authenticateToken, async (req, res) => {
 
 /**
  * ALL DELETE
- * 
+ *
  * Delete a completed course for a user
  */
 app.delete(
@@ -993,7 +985,7 @@ app.delete(
 
 /**
  * ALL GET
- * 
+ *
  * Retrieve all completed courses for a user
  */
 app.get(
@@ -1016,7 +1008,7 @@ app.get(
 
 /**
  * ALL GET
- * 
+ *
  * Retrieve all course information for all the courses
  * a user has completed so far
  */

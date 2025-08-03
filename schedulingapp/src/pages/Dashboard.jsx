@@ -40,7 +40,7 @@ const Dashboard = () => {
     import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
   useEffect(() => {
-    fetch(`${backendUrl}/me`, { credentials: "include" })
+    fetch(`${backendUrl}/api/me`, { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch user");
         return res.json();

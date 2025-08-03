@@ -20,7 +20,7 @@ const LogoutPage = () => {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${backendUrl}/logout`, {
+      await fetch(`${backendUrl}/api/logout`, {
         method: "GET",
         credentials: "include",
       });
