@@ -11,8 +11,15 @@ import {
   Box,
   IconButton,
   Divider,
+  List,
+  ListItem,
+  ListItemIcon, 
+  ListItemText 
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import WarningIcon from '@mui/icons-material/Warning';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { keyframes } from "@mui/system";
 import { useWebSocket } from "../context/WebSocketContext";
 
@@ -26,7 +33,51 @@ const subtleGlow = keyframes`
   50% { opacity: 1; }
 `;
 
+const classSchedules = {
+  "English 9": { period: 1 },
+  "AP HUG": { period: 3 },
+  "AP Physics": { period: 2 },
+  "AP Chem": { period: 2 },
+  "American Literature": { period: 4 },
+};
 const defaultYears = ["9th Grade", "10th Grade", "11th Grade", "12th Grade"];
+
+const conflictDetection = (plan) => {
+  const conflicts = [];
+
+  Object.entries(plan.years).forEach(([grade, courses]) => {
+    if (courses.length === 0) return;
+
+    const periodMap = {};
+
+    courses.forEach((courseName) => {
+      const schedule = classSchedules[courseName];
+      if (!schedule) return;
+
+      const period = schedule.period;
+      if (!periodMap[period]) {
+        periodMap[period] = [];
+      }
+      periodMap[period].push(courseName);
+    });
+
+    Object.entries(periodMap).forEach(([period, coursesInPeriod]) => {
+      if (coursesInPeriod.length > 1) {
+        conflicts.push({
+          type: "time_conflict",
+          grade: grade,
+          period: parseInt(period),
+          conflictingCourses: coursesInPeriod,
+          message: `${grade}: ${coursesInPeriod.join(
+            " and "
+          )} both scheduled for Period ${period}`,
+        });
+      }
+    });
+  });
+  console.log("conflicts:", conflicts);
+  return conflicts;
+};
 
 const semesterToGrade = (year, semester) => {
   const currentYear = 2025;
@@ -59,11 +110,18 @@ export default function FourYearPlanner() {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState("");
   const [username, setUsername] = useState("");
-
   const [user, setUser] = useState(null);
+
+  // Conflict vars
+  const [conflicts, setConflicts] = useState([]);
 
   const backendUrl =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+
+  const handleConflicts = () => {
+    const c = conflictDetection(plans[activePlanIndex]);
+    setConflicts(c);
+  };
 
   useEffect(() => {
     fetch(`${backendUrl}/api/me`, { credentials: "include" })
@@ -264,6 +322,7 @@ export default function FourYearPlanner() {
           )
         ).then((plansWithCourses) => {
           setPlans(plansWithCourses);
+          console.log("plans:", plansWithCourses);
           sendPlansUpdate(plansWithCourses);
 
           plansWithCourses.forEach((plan) => {
@@ -983,6 +1042,161 @@ export default function FourYearPlanner() {
                 >
                   Delete Plan
                 </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={handleConflicts}
+                  size="small"
+                  sx={{
+                    textTransform: "none",
+                    fontWeight: "500",
+                    borderRadius: "8px",
+                    color: "white",
+                    borderColor: "white",
+                    "&:hover": {
+                      backgroundColor: "rgba(248, 113, 113, 0.1)",
+                    },
+                  }}
+                >
+                  Find Conflicts
+                </Button>
+              </Box>
+
+              <Box sx={{ mt: 4 }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{
+                    color: "#ffffff",
+                    fontWeight: "600",
+                    mb: 3,
+                  }}
+                >
+                  Conflicts
+                </Typography>
+                <Box
+                  sx={{
+                    backgroundColor: "rgba(255, 255, 255, 0.05)",
+                    borderRadius: 2,
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    p: 3,
+                    minHeight: 120,
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                  }}
+                >
+                  {conflicts.length === 0 && (
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        textAlign: "center",
+                        py: 2,
+                      }}
+                    >
+                      <CheckCircleIcon
+                        sx={{
+                          fontSize: 48,
+                          color: "success.main",
+                          mb: 2,
+                          opacity: 0.8,
+                        }}
+                      />
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          color: "success.light",
+                          fontWeight: 500,
+                          mb: 1,
+                        }}
+                      >
+                        All clear!
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: "rgba(255, 255, 255, 0.7)",
+                        }}
+                      >
+                        No conflicts detected in this schedule
+                      </Typography>
+                    </Box>
+                  )}
+
+                  {conflicts.length > 0 && (
+                    <Box>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          mb: 2,
+                          pb: 1,
+                          borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+                        }}
+                      >
+                        <WarningIcon
+                          sx={{
+                            fontSize: 24,
+                            color: "warning.main",
+                            mr: 1,
+                          }}
+                        />
+                        <Typography
+                          variant="h6"
+                          sx={{
+                            color: "warning.light",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {conflicts.length} Conflict
+                          {conflicts.length > 1 ? "s" : ""} Found
+                        </Typography>
+                      </Box>
+
+                      <List sx={{ p: 0 }}>
+                        {conflicts.map((item, i) => (
+                          <ListItem
+                            key={i}
+                            sx={{
+                              backgroundColor: "rgba(255, 193, 7, 0.1)",
+                              border: "1px solid rgba(255, 193, 7, 0.2)",
+                              borderRadius: 1,
+                              mb: 1,
+                              p: 2,
+                              "&:last-child": { mb: 0 },
+                              transition: "all 0.2s ease",
+                              "&:hover": {
+                                backgroundColor: "rgba(255, 193, 7, 0.15)",
+                                transform: "translateX(4px)",
+                              },
+                            }}
+                          >
+                            <ListItemIcon sx={{ minWidth: 36 }}>
+                              <ErrorOutlineIcon
+                                sx={{
+                                  color: "warning.main",
+                                  fontSize: 20,
+                                }}
+                              />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={item.message}
+                              sx={{
+                                "& .MuiListItemText-primary": {
+                                  color: "rgba(255, 255, 255, 0.9)",
+                                  fontSize: "0.95rem",
+                                  lineHeight: 1.4,
+                                },
+                              }}
+                            />
+                          </ListItem>
+                        ))}
+                      </List>
+                    </Box>
+                  )}
+                </Box>
               </Box>
 
               <Box sx={{ mt: 4 }}>
