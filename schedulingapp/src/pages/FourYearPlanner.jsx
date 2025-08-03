@@ -365,8 +365,8 @@ export default function FourYearPlanner() {
       const urlParams = new URLSearchParams(window.location.search);
       const counselorMode = urlParams.get("counselorMode") === "true";
       const studentId = urlParams.get("studentId");
-      const endpoint = counselorMode ? "-student" : "";
-      fetch(`${backendUrl}/api/plans${endpoint}/${activePlan.id}/courses`, {
+      const endpoint = counselorMode ? "admin/" : "";
+      fetch(`${backendUrl}/api/${endpoint}plans/${activePlan.id}/courses`, {
         method: "PUT",
         credentials: "include",
         headers: {
@@ -383,32 +383,6 @@ export default function FourYearPlanner() {
           alert(err.message);
         });
     }
-  };
-
-  const handleUpdatePlanName = () => {
-    const activePlan = plans[activePlanIndex];
-    if (!activePlan.id) {
-      alert("Please save the plan before updating its name.");
-      return;
-    }
-    const urlParams = new URLSearchParams(window.location.search);
-    const counselorMode = urlParams.get("counselorMode") === "true";
-    const studentId = urlParams.get("studentId");
-    const endpoint = counselorMode ? "-student" : "";
-    fetch(`${backendUrl}/api/plans${endpoint}/${activePlan.id}`, {
-      method: "PUT",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "student-email": studentId,
-      },
-      body: JSON.stringify({ name: activePlan.name }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to update plan name");
-        alert("Plan name updated");
-      })
-      .catch((err) => alert(err.message));
   };
 
   const handleDeletePlan = () => {

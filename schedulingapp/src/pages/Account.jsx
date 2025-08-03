@@ -19,6 +19,16 @@ import {
   Select,
   MenuItem,
 } from "@mui/material";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 import { keyframes } from "@mui/system";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -40,16 +50,13 @@ export default function Account() {
   const [availableClasses, setAvailableClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [selectedClass, setSelectedClass] = useState(null);
+  const [selectedClass, setSelectedClass] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
 
   const backendUrl =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
-  // Years dropdown options
-  const yearOptions = [
-    "2020", "2021", "2022", "2023", "2024", "2025"
-  ];
+  const yearOptions = ["9th", "10th", "11th", "12th"];
 
   useEffect(() => {
     fetchCompletedClasses();
@@ -58,13 +65,13 @@ export default function Account() {
 
   const fetchCompletedClasses = async () => {
     try {
-      // TODO: Implement API call to get user's completed classes
       const response = await fetch(`${backendUrl}/api/completed-courses`, {
         method: "GET",
         credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
+        console.log("data: " + data);
         setCompletedClasses(data);
       }
     } catch (error) {
@@ -76,14 +83,18 @@ export default function Account() {
 
   const fetchAvailableClasses = async () => {
     try {
-      // TODO: Implement API call to get all available classes
       const response = await fetch(`${backendUrl}/api/classes`, {
         method: "GET",
         credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
-        setAvailableClasses(data);
+        console.log(data);
+        setAvailableClasses(
+          data.map((item, i) => {
+            return item.name;
+          })
+        );
       }
     } catch (error) {
       console.error("Failed to fetch available classes:", error);
@@ -94,7 +105,6 @@ export default function Account() {
     if (!selectedClass || !selectedYear) return;
 
     try {
-      // TODO: Implement API call to add completed class
       const response = await fetch(`${backendUrl}/api/completed-courses`, {
         method: "POST",
         headers: {
@@ -102,15 +112,14 @@ export default function Account() {
         },
         credentials: "include",
         body: JSON.stringify({
-          classId: selectedClass.id,
-          className: selectedClass.name,
+          className: selectedClass,
           year: selectedYear,
         }),
       });
 
       if (response.ok) {
         const newClass = await response.json();
-        setCompletedClasses(prev => [...prev, newClass]);
+        setCompletedClasses((prev) => [...prev, newClass]);
         handleCloseDialog();
       }
     } catch (error) {
@@ -118,16 +127,20 @@ export default function Account() {
     }
   };
 
-  const handleRemoveClass = async (classId) => {
+  const handleRemoveClass = async (className) => {
     try {
-      // TODO: Implement API call to remove completed class
-      const response = await fetch(`${backendUrl}/api/completed-courses/${classId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const response = await fetch(
+        `${backendUrl}/api/completed-courses/${className}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        }
+      );
 
       if (response.ok) {
-        setCompletedClasses(prev => prev.filter(cls => cls.id !== classId));
+        setCompletedClasses((prev) =>
+          prev.filter((cls) => cls.class_name !== className)
+        );
       }
     } catch (error) {
       console.error("Failed to remove completed class:", error);
@@ -146,11 +159,6 @@ export default function Account() {
     setSelectedYear("");
   };
 
-  const handleSave = async () => {
-    // TODO: Implement any final save logic if needed
-    console.log("Account updated successfully");
-  };
-
   return (
     <Box
       sx={{
@@ -164,7 +172,6 @@ export default function Account() {
         fontFamily:
           '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         position: "relative",
-        overflow: "hidden",
       }}
     >
       <Paper
@@ -181,6 +188,7 @@ export default function Account() {
           animation: `${fadeIn} 0.6s ease-out`,
           position: "relative",
           transition: "all 0.2s ease-out",
+          top: "40px",
         }}
       >
         <Box sx={{ mb: 6, textAlign: "center" }}>
@@ -217,7 +225,7 @@ export default function Account() {
               mt: 2,
             }}
           >
-            Track the classes you've already completed to better plan your future schedule
+            Track the classes you've already completed
           </Typography>
         </Box>
         <Box sx={{ mb: 4, textAlign: "center" }}>
@@ -235,16 +243,14 @@ export default function Account() {
               px: 4,
               borderRadius: "12px",
               border: "1px solid rgba(59, 130, 246, 0.2)",
-              boxShadow: "0 8px 25px rgba(59, 130, 246, 0.3)",
               transition: "all 0.2s ease-out",
               "&:hover": {
                 background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
                 transform: "translateY(-1px)",
-                boxShadow: "0 12px 35px rgba(59, 130, 246, 0.4)",
               },
             }}
           >
-            Add Completed Course
+            Add Course
           </Button>
         </Box>
         <Box sx={{ mb: 6 }}>
@@ -272,7 +278,7 @@ export default function Account() {
                 No completed courses yet
               </Typography>
               <Typography sx={{ color: "#64748b" }}>
-                Add your first completed course to get started
+                Add your first course to get started
               </Typography>
             </Box>
           ) : (
@@ -294,7 +300,13 @@ export default function Account() {
                     },
                   }}
                 >
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
                     <Box sx={{ flex: 1 }}>
                       <Typography
                         variant="h6"
@@ -318,7 +330,7 @@ export default function Account() {
                       />
                     </Box>
                     <IconButton
-                      onClick={() => handleRemoveClass(course.id)}
+                      onClick={() => handleRemoveClass(course.class_name)}
                       sx={{
                         color: "#ef4444",
                         "&:hover": {
@@ -333,34 +345,6 @@ export default function Account() {
               ))}
             </Stack>
           )}
-        </Box>
-        <Box sx={{ textAlign: "center" }}>
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon />}
-            onClick={handleSave}
-            fullWidth
-            sx={{
-              background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
-              color: "#ffffff",
-              textTransform: "none",
-              fontWeight: "500",
-              fontSize: "1rem",
-              py: 2,
-              px: 4,
-              borderRadius: "12px",
-              border: "1px solid rgba(34, 197, 94, 0.2)",
-              boxShadow: "0 8px 25px rgba(34, 197, 94, 0.3)",
-              transition: "all 0.2s ease-out",
-              "&:hover": {
-                background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
-                transform: "translateY(-1px)",
-                boxShadow: "0 12px 35px rgba(34, 197, 94, 0.4)",
-              },
-            }}
-          >
-            Save Changes
-          </Button>
         </Box>
         <Box
           sx={{
@@ -400,11 +384,11 @@ export default function Account() {
         >
           Add Completed Course
         </DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
+        <DialogContent sx={{ mt: 4 }}>
           <Stack spacing={3}>
             <Autocomplete
               options={availableClasses}
-              getOptionLabel={(option) => `${option.code} - ${option.name}`}
+              getOptionLabel={(option) => `${option}`}
               value={selectedClass}
               onChange={(event, newValue) => setSelectedClass(newValue)}
               renderInput={(params) => (

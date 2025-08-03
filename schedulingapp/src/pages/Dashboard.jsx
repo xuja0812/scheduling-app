@@ -16,6 +16,7 @@ import {
   IconButton,
 } from "@mui/material";
 import { keyframes } from "@mui/system";
+import PieCharts from "../components/PieCharts";
 
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(20px); }
@@ -25,7 +26,15 @@ const fadeIn = keyframes`
 const Dashboard = () => {
   const [user, setUser] = useState(null);
   const [schedules, setSchedules] = useState([]);
+  const [mathCredits, setMathCredits] = useState(0);
+  const [englishCredits, setEnglishCredits] = useState(0);
+  const [electiveCredits, setElectiveCredits] = useState(0);
+  const [totalCredits, setTotalCredits] = useState(0);
   const navigate = useNavigate();
+
+  const ELECTIVES = 8.0;
+  const MATH = 5.0;
+  const ENGLISH = 5.0;
 
   const backendUrl =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
@@ -47,6 +56,56 @@ const Dashboard = () => {
       })
       .then((data) => setSchedules(data))
       .catch(() => setUser(null));
+  }, []);
+
+  const getPrereqs = async () => {
+    try {
+      const response = await fetch(`${backendUrl}/api/prereqs`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return data;
+      }
+    } catch (err) {
+      console.error("Failed to fetch completed classes:", err);
+    }
+  };
+
+  useEffect(() => {
+    const calculateCredits = async () => {
+      try {
+        let total = 0;
+        let elective = 0;
+        let math = 0;
+        let english = 0;
+
+        const allCourses = await getPrereqs();
+
+        if (allCourses) {
+          allCourses.forEach((course) => {
+            const credits = course.credits;
+            total += credits;
+
+            if (course.category === "Elective") {
+              elective += credits;
+            } else if (course.category === "Math") {
+              math += credits;
+            } else if (course.category === "English") {
+              english += credits;
+            }
+          });
+        }
+        setTotalCredits(total);
+        setElectiveCredits(elective);
+        setMathCredits(math);
+        setEnglishCredits(english);
+      } catch (err) {
+        console.error("Error calculating credits:", err);
+      }
+    };
+
+    calculateCredits();
   }, []);
 
   if (!user) {
@@ -360,6 +419,12 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </Box>
+      <PieCharts
+        mathCredits={mathCredits}
+        englishCredits={englishCredits}
+        electiveCredits={electiveCredits}
+        totalCredits={totalCredits}
+      />
     </Box>
   );
 };

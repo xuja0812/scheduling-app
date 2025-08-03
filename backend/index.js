@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require("uuid");
 const http = require("http");
 const jwt = require("jsonwebtoken");
 const WebSocket = require("ws");
+const Redis = require("ioredis");
 const ScheduleOptimizer = require("./services/scheduleOptimizer");
 require("dotenv").config();
 
@@ -30,12 +31,29 @@ app.use(
   })
 );
 
+/**
+ * Express app setup
+ */
 app.use(express.json());
 app.use(cookieParser());
-
 app.set("trust proxy", 1);
-
 app.use(passport.initialize());
+
+/**
+ * Redis configuration
+ */
+const redis = new Redis({
+  port: 6379,
+  host: process.env.REDIS_HOST || '127.0.0.1',
+});
+
+redis.on("connect", () => {
+  console.log("Connected to Redis");
+});
+
+redis.on("error", (err) => {
+  console.error("Redis error: " + err);
+});
 
 /**
  * Standardized logging structure
@@ -67,6 +85,32 @@ const authenticateToken = (req, res, next) => {
     req.user = user;
     next();
   });
+};
+
+/**
+ * Redis cache middleware
+ */
+const cache = (duration = 300) => {
+  return async (req, res, next) => {
+    const user_id = req.user?.id || "anonymous";
+    const key = `${req.originalUrl}:user:${user_id}`;
+    try {
+      const cached = await redis.get(key);
+      if (cached) {
+        return res.json(JSON.parse(cached));
+      }
+
+      const originalJson = res.json;
+      res.json = function (data) {
+        redis.setex(key, duration, JSON.stringify(data));
+        return originalJson.call(this, data);
+      };
+      next();
+    } catch (err) {
+      console.error("Cache error: " + err);
+      next();
+    }
+  };
 };
 
 /**
@@ -229,10 +273,14 @@ module.exports = { app, pool };
  *
  * Allows the counselor to see all current student plans
  */
-app.get("/api/admin/all-plans", authenticateToken, async (req, res) => {
-  logReq(req);
+app.get(
+  "/api/admin/all-plans",
+  authenticateToken,
+  cache(300),
+  async (req, res) => {
+    logReq(req);
 
-  const query = `
+    const query = `
     SELECT plans.id as plan_id, plans.name as plan_name, users.email as student_email,
            plan_courses.class_code, plan_courses.year, plan_courses.semester
     FROM plans
@@ -241,35 +289,36 @@ app.get("/api/admin/all-plans", authenticateToken, async (req, res) => {
     ORDER BY users.email, plans.name, plan_courses.year, plan_courses.semester
   `;
 
-  try {
-    const { rows } = await pool.query(query);
+    try {
+      const { rows } = await pool.query(query);
 
-    const plansMap = {};
-    rows.forEach((row) => {
-      if (!plansMap[row.plan_id]) {
-        plansMap[row.plan_id] = {
-          planId: row.plan_id,
-          planName: row.plan_name,
-          studentEmail: row.student_email,
-          courses: [],
-        };
-      }
-      if (row.class_code) {
-        plansMap[row.plan_id].courses.push({
-          class_code: row.class_code,
-          year: row.year,
-          semester: row.semester,
-        });
-      }
-    });
+      const plansMap = {};
+      rows.forEach((row) => {
+        if (!plansMap[row.plan_id]) {
+          plansMap[row.plan_id] = {
+            planId: row.plan_id,
+            planName: row.plan_name,
+            studentEmail: row.student_email,
+            courses: [],
+          };
+        }
+        if (row.class_code) {
+          plansMap[row.plan_id].courses.push({
+            class_code: row.class_code,
+            year: row.year,
+            semester: row.semester,
+          });
+        }
+      });
 
-    const allPlans = Object.values(plansMap);
-    res.json(allPlans);
-  } catch (err) {
-    console.error("Error fetching all plans:", err.message);
-    res.status(500).json({ error: err.message });
+      const allPlans = Object.values(plansMap);
+      res.json(allPlans);
+    } catch (err) {
+      console.error("Error fetching all plans:", err.message);
+      res.status(500).json({ error: err.message });
+    }
   }
-});
+);
 
 /**
  * ALL GET
@@ -284,7 +333,7 @@ app.get(
   },
   passport.authenticate("google", {
     scope: ["profile", "email"],
-    session: false
+    session: false,
   })
 );
 
@@ -303,7 +352,7 @@ app.get(
   passport.authenticate("google", {
     // failureRedirect: 'http://localhost:5173/login',
     failureRedirect: "https://scheduler-two-rho.vercel.app",
-    session: false
+    session: false,
   }),
   (req, res) => {
     const { token } = req.user;
@@ -342,9 +391,8 @@ app.get("/logout", (req, res) => {
  *
  * Retrieves current user's info
  */
-app.get("/me", authenticateToken, (req, res) => {
+app.get("/me", authenticateToken, cache(300), (req, res) => {
   logReq(req);
-  console.log(`Current user: ${req.user.email}`);
   res.json({ user: req.user });
 });
 
@@ -354,7 +402,7 @@ app.get("/me", authenticateToken, (req, res) => {
  * Retrieves all schedules for a student based on their email
  * Does not rely on sessions
  */
-app.get("/api/admin/plans", authenticateToken, async (req, res) => {
+app.get("/api/admin/plans", authenticateToken, cache(300), async (req, res) => {
   logReq(req);
   try {
     const email = req.get("student-email");
@@ -384,7 +432,7 @@ app.get("/api/admin/plans", authenticateToken, async (req, res) => {
  * Retrieves all schedules for the current student
  * Relies on session
  */
-app.get("/api/plans", authenticateToken, async (req, res) => {
+app.get("/api/plans", authenticateToken, cache(300), async (req, res) => {
   logReq(req);
   try {
     const result = await pool.query("SELECT * FROM plans WHERE user_id = $1", [
@@ -402,21 +450,26 @@ app.get("/api/plans", authenticateToken, async (req, res) => {
  *
  * Retrieves a certain plan based on planId
  */
-app.get("/api/plans/:planId", authenticateToken, async (req, res) => {
-  logReq(req);
-  const { planId } = req.params;
+app.get(
+  "/api/plans/:planId",
+  authenticateToken,
+  cache(300),
+  async (req, res) => {
+    logReq(req);
+    const { planId } = req.params;
 
-  try {
-    const result = await pool.query(
-      "SELECT * FROM plan_courses WHERE plan_id = $1",
-      [planId]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Error fetching plan courses:", err.message);
-    res.status(500).json({ error: err.message });
+    try {
+      const result = await pool.query(
+        "SELECT * FROM plan_courses WHERE plan_id = $1",
+        [planId]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching plan courses:", err.message);
+      res.status(500).json({ error: err.message });
+    }
   }
-});
+);
 
 /**
  * STUDENT POST
@@ -427,6 +480,8 @@ app.post("/api/plans", authenticateToken, async (req, res) => {
   logReq(req);
   const { name, courses } = req.body;
   const planId = uuidv4();
+
+  await redis.del(`/api/plans:user:${req.user.id}`);
 
   const client = await pool.connect();
   try {
@@ -633,7 +688,6 @@ app.put("/api/plans/:planId/courses", authenticateToken, async (req, res) => {
  * COUNSELOR DELETE
  *
  * Deletes a plan based on planId for a certain student email
- * Does not rely on sessions
  */
 app.delete("/api/admin/plans/:planId", authenticateToken, async (req, res) => {
   logReq(req);
@@ -676,7 +730,6 @@ app.delete("/api/admin/plans/:planId", authenticateToken, async (req, res) => {
  * STUDENT DELETE
  *
  * Deletes a student's plan based on planId
- * Relies on sessions
  */
 app.delete("/api/plans/:planId", authenticateToken, async (req, res) => {
   logReq(req);
@@ -713,6 +766,8 @@ app.delete("/api/plans/:planId", authenticateToken, async (req, res) => {
 app.post("/api/admin/comment", authenticateToken, async (req, res) => {
   logReq(req);
 
+  await redis.del(`/api/admin/comment:user:${req.user.id}`);
+
   const { planId, comment } = req.body;
   if (!planId || !comment) {
     return res.status(400).json({ error: "Missing planId or comment" });
@@ -736,38 +791,47 @@ app.post("/api/admin/comment", authenticateToken, async (req, res) => {
  *
  * Retrieves commments for the counselor's admin page for a schedule
  */
-app.get("/api/admin/comments/:planId", authenticateToken, async (req, res) => {
-  logReq(req);
+app.get(
+  "/api/admin/comments/:planId",
+  authenticateToken,
+  cache(300),
+  async (req, res) => {
+    logReq(req);
 
-  const { planId } = req.params;
-  try {
-    const result = await pool.query(
-      `SELECT comments.id, comments.text, comments.created_at, users.name AS author
+    const { planId } = req.params;
+    try {
+      const result = await pool.query(
+        `SELECT comments.id, comments.text, comments.created_at, users.name AS author
        FROM comments
        JOIN users ON comments.user_id = users.id
        WHERE plan_id = $1
        ORDER BY comments.created_at DESC`,
-      [planId]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Error fetching comments:", err.message);
-    res.status(500).json({ error: "Internal server error" });
+        [planId]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching comments:", err.message);
+      res.status(500).json({ error: "Internal server error" });
+    }
   }
-});
+);
 
 /**
  * ALL GET
  *
  * Gets all comments for a plan
  */
-app.get("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
-  logReq(req);
+app.get(
+  "/api/plans/:planId/comments",
+  authenticateToken,
+  cache(300),
+  async (req, res) => {
+    logReq(req);
 
-  const { planId } = req.params;
+    const { planId } = req.params;
 
-  try {
-    const query = `
+    try {
+      const query = `
       SELECT 
         comments.id,
         comments.plan_id,
@@ -783,13 +847,14 @@ app.get("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
       ORDER BY comments.created_at ASC
     `;
 
-    const result = await pool.query(query, [planId]);
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Error fetching comments with authors:", err.message);
-    res.status(500).json({ error: err.message });
+      const result = await pool.query(query, [planId]);
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching comments with authors:", err.message);
+      res.status(500).json({ error: err.message });
+    }
   }
-});
+);
 
 /**
  * ALL POST
@@ -802,6 +867,8 @@ app.post("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
   const { planId } = req.params;
   const { text } = req.body;
   const userId = req.user.id;
+
+  await redis.del(`/api/student/${planId}:user:${userId}`);
 
   if (!text || !text.trim()) {
     return res.status(400).json({ error: "Comment text is required" });
@@ -823,27 +890,9 @@ app.post("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
 });
 
 /**
- * ONGOING: conflict checking
- */
-app.post("/check-conflicts", authenticateToken, async (req, res) => {
-  try {
-    const { courses } = req.body;
-    const optimizer = new ScheduleOptimizer();
-    const conflicts = optimizer.detectConflicts(courses);
-    const suggestions = optimizer.suggestResolution(conflicts);
-    res.json({
-      hasConflicts: conflicts.length > 0,
-      conflicts: suggestions,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err });
-  }
-});
-
-/**
  * ONGOING: analytics
  */
-app.get("/analytics", authenticateToken, async (req, res) => {
+app.get("/analytics", authenticateToken, cache(300), async (req, res) => {
   try {
     const query = `
       SELECT 
@@ -864,4 +913,132 @@ app.get("/analytics", authenticateToken, async (req, res) => {
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
+});
+
+/**
+ * ONGOING: account info for classes students have already taken
+ */
+
+/**
+ * ALL GET
+ *
+ * Retrieve all available past classes
+ */
+app.get("/api/classes", authenticateToken, cache(300), async (req, res) => {
+  try {
+    const query = `
+    SELECT 
+        class_name AS name,
+        credits,
+        category,
+        honors
+      FROM courses
+    `;
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err });
+  }
+});
+
+/**
+ * ALL POST
+ * 
+ * Add a completed course for a user
+ */
+app.post("/api/completed-courses", authenticateToken, async (req, res) => {
+  const user_id = req.user.id;
+  const { className, year } = req.body;
+  await redis.del(`/api/completed-courses:user:${user_id}`);
+  try {
+    const query = `
+  INSERT INTO completed_courses (user_id, class_name, year, course_id) 
+  VALUES ($1, $2, $3, (SELECT id FROM courses WHERE class_name = $2))
+`;
+    await pool.query("BEGIN");
+    const result = await pool.query(query, [user_id, className, year]);
+    await pool.query("COMMIT");
+    res.json({ class_name: className, year: year });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: err });
+  }
+});
+
+/**
+ * ALL DELETE
+ * 
+ * Delete a completed course for a user
+ */
+app.delete(
+  "/api/completed-courses/:className",
+  authenticateToken,
+  async (req, res) => {
+    const user_id = req.user.id;
+    const { className } = req.params;
+    // This assumes that you can only take a class once a year
+    try {
+      const query = `
+      DELETE FROM completed_courses WHERE user_id = $1 AND class_name = $2
+    `;
+      await pool.query("BEGIN");
+      const result = await pool.query(query, [user_id, className]);
+      await pool.query("COMMIT");
+      res.json({ class_name: className });
+    } catch (err) {
+      res.status(500).json({ error: err });
+    }
+  }
+);
+
+/**
+ * ALL GET
+ * 
+ * Retrieve all completed courses for a user
+ */
+app.get(
+  "/api/completed-courses",
+  authenticateToken,
+  cache(300),
+  async (req, res) => {
+    const user_id = req.user.id;
+    try {
+      const query = `
+      SELECT * FROM completed_courses WHERE user_id = $1
+    `;
+      const result = await pool.query(query, [user_id]);
+      res.json(result.rows);
+    } catch (err) {
+      res.status(500).json({ error: err });
+    }
+  }
+);
+
+/**
+ * ALL GET
+ * 
+ * Retrieve all course information for all the courses
+ * a user has completed so far
+ */
+app.get("/api/prereqs", authenticateToken, cache(300), async (req, res) => {
+  const user = req.user;
+  const user_id = user.id;
+  const query = `
+    SELECT 
+      * 
+    FROM courses JOIN completed_courses ON
+    courses.id = completed_courses.course_id
+    WHERE completed_courses.user_id = $1
+  `;
+  try {
+    const response = await pool.query(query, [user_id]);
+    const processedRows = response.rows.map((row) => ({
+      ...row,
+      credits: parseFloat(row.credits),
+    }));
+    res.json(processedRows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err });
+  }
 });
