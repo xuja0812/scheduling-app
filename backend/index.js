@@ -585,11 +585,10 @@ app.get(
     }
 
     res.cookie("token", req.user.token, {
-      httpOnly: false,
+      httpOnly: true,
       secure: false,
-      sameSite: "none",
-      maxAge: 15 * 60 * 1000, // 15 minutes,
-      domain: undefined
+      sameSite: "lax",
+      maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
     res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
