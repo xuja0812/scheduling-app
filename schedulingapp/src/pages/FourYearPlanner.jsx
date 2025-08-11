@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Button,
@@ -13,15 +13,18 @@ import {
   Divider,
   List,
   ListItem,
-  ListItemIcon, 
-  ListItemText 
+  ListItemIcon,
+  ListItemText,
+  Autocomplete,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import WarningIcon from '@mui/icons-material/Warning';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import WarningIcon from "@mui/icons-material/Warning";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import { keyframes } from "@mui/system";
-import { useWebSocket } from "../context/WebSocketContext";
+import { useWebSocket } from "../hooks/useWebSocket";
+import PlanTabs from "../components/PlanTabs";
+import YearCourses from "../components/YearCourses";
 
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
@@ -34,7 +37,8 @@ const subtleGlow = keyframes`
 `;
 
 const classSchedules = {
-  "English 9": { period: 1 },
+  "Intro to Statistics": { period: 1 },
+  "AP Calculus AB": { period: 1 },
   "AP HUG": { period: 3 },
   "AP Physics": { period: 2 },
   "AP Chem": { period: 2 },
@@ -101,12 +105,14 @@ export default function FourYearPlanner() {
     year: "9th Grade",
     name: "",
     credits: 1,
+    course_id: 0,
   });
   const [comments, setComments] = useState({});
   const [newComment, setNewComment] = useState("");
 
   // WebSocket vars
-  const { socket, isConnected } = useWebSocket();
+  const { socket, isConnected } = useWebSocket(true);
+
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState("");
   const [username, setUsername] = useState("");
@@ -114,6 +120,9 @@ export default function FourYearPlanner() {
 
   // Conflict vars
   const [conflicts, setConflicts] = useState([]);
+
+  const [courses, setCourses] = useState({});
+  const [viewers, setViewers] = useState([]);
 
   const backendUrl =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
@@ -131,6 +140,23 @@ export default function FourYearPlanner() {
       })
       .then((data) => {
         setUser(data.user);
+      })
+      .catch(() => setUser(null));
+  }, []);
+
+  useEffect(() => {
+    fetch(`${backendUrl}/api/classes`, { credentials: "include" })
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch user");
+        return res.json();
+      })
+      .then((data) => {
+        console.log("returned from api/classes:", data);
+        let cs = new Map();
+        for (let course of data) {
+          cs.set(course.name, course);
+        }
+        setCourses(cs);
       })
       .catch(() => setUser(null));
   }, []);
@@ -186,6 +212,9 @@ export default function FourYearPlanner() {
             break;
           case "plans-update":
             if (data.sender !== username) {
+              console.log("activePlanIndex:", activePlanIndex);
+              console.log("actual length:", data.plans.length);
+              setActivePlanIndex((prev) => data.plans.length - 1);
               setPlans(data.plans);
             }
             break;
@@ -193,6 +222,21 @@ export default function FourYearPlanner() {
             if (data.sender !== username) {
               setComments(data.comments);
             }
+            break;
+          case "presence-update":
+            console.log("data:", data);
+            setViewers((prev) => {
+              if (data.action === "join") {
+                return [
+                  ...prev.filter((u) => u.id !== data.user.id),
+                  data.user,
+                ];
+              }
+              if (data.action === "leave") {
+                return prev.filter((u) => u.id !== data.user.id);
+              }
+              return prev;
+            });
             break;
           default:
             setMessages((prev) => [
@@ -281,10 +325,10 @@ export default function FourYearPlanner() {
     const counselorMode = urlParams.get("counselorMode") === "true";
     const studentId = urlParams.get("studentId");
     const endpoint = counselorMode ? "admin/plans" : "plans";
+    const end = counselorMode ? `/${studentId}` : "";
 
-    fetch(`${backendUrl}/api/${endpoint}`, {
+    fetch(`${backendUrl}/api/${endpoint}${end}`, {
       credentials: "include",
-      headers: { "student-email": studentId },
     })
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch plans");
@@ -296,7 +340,7 @@ export default function FourYearPlanner() {
           sendPlansUpdate(plans);
           return;
         }
-
+        console.log("plans data:", plansData);
         Promise.all(
           plansData.map((plan) =>
             fetch(`${backendUrl}/api/plans/${plan.id}`, {
@@ -353,7 +397,7 @@ export default function FourYearPlanner() {
       .then((res) => res.json())
       .then((data) => {
         setComments((prev) => ({ ...prev, [planId]: data }));
-        sendCommentsUpdate(comments);
+        sendCommentsUpdate({ ...comments, [planId]: data }); // Send the updated comments
       });
   };
 
@@ -368,6 +412,7 @@ export default function FourYearPlanner() {
       body: JSON.stringify({ text: newComment.trim() }),
     })
       .then((res) => {
+        console.log("new comment:", newComment);
         if (!res.ok) throw new Error("Failed to post comment");
         setNewComment("");
         fetchComments(planId);
@@ -387,25 +432,34 @@ export default function FourYearPlanner() {
   };
 
   const flattenCourses = (yearsObj) => {
-    const courses = [];
+    const cs = [];
     for (const [year, classes] of Object.entries(yearsObj)) {
+      console.log("classes:", classes);
       classes.forEach((class_code) => {
-        courses.push({
+        const course_id = courses.get(class_code).id;
+        cs.push({
+          course_id,
           class_code,
           year,
-          semester: "fall",
         });
       });
     }
-    return courses;
+    console.log("flattened courses:", cs);
+    return cs;
   };
 
   const handleSaveCourses = () => {
     const activePlan = plans[activePlanIndex];
     const coursesFlat = flattenCourses(activePlan.years);
+    console.log("flattened courses in hook:", coursesFlat);
 
     if (!activePlan.id) {
-      fetch(`${backendUrl}/api/plans`, {
+      const urlParams = new URLSearchParams(window.location.search);
+      const counselorMode = urlParams.get("counselorMode") === "true";
+      const studentId = urlParams.get("studentId");
+      const endpoint = counselorMode ? "admin/" : "";
+      const end = counselorMode ? `/${studentId}` : "";
+      fetch(`${backendUrl}/api/${endpoint}plans${end}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -425,15 +479,18 @@ export default function FourYearPlanner() {
       const counselorMode = urlParams.get("counselorMode") === "true";
       const studentId = urlParams.get("studentId");
       const endpoint = counselorMode ? "admin/" : "";
-      fetch(`${backendUrl}/api/${endpoint}plans/${activePlan.id}/courses`, {
-        method: "PUT",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "student-email": studentId,
-        },
-        body: JSON.stringify({ courses: coursesFlat, name: activePlan.name }),
-      })
+      const end = counselorMode ? `/${studentId}` : "";
+      fetch(
+        `${backendUrl}/api/${endpoint}plans/${activePlan.id}/courses${end}`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ courses: coursesFlat, name: activePlan.name }),
+        }
+      )
         .then((res) => {
           if (!res.ok) throw new Error("Failed to update plan courses");
           alert("Courses updated successfully");
@@ -454,10 +511,10 @@ export default function FourYearPlanner() {
     const counselorMode = urlParams.get("counselorMode") === "true";
     const studentId = urlParams.get("studentId");
     const endpoint = counselorMode ? "admin/" : "";
-    fetch(`${backendUrl}/api/${endpoint}plans/${activePlan.id}`, {
+    const end = counselorMode ? `/${studentId}` : "";
+    fetch(`${backendUrl}/api/${endpoint}plans/${activePlan.id}${end}`, {
       method: "DELETE",
       credentials: "include",
-      headers: { "student-email": studentId },
     })
       .then((res) => {
         if (!res.ok) throw new Error("Failed to delete plan");
@@ -473,33 +530,44 @@ export default function FourYearPlanner() {
   const handleNameChange = (e) => {
     const updatedPlans = [...plans];
     updatedPlans[activePlanIndex].name = e.target.value;
-    setPlans(updatedPlans);
+    setPlans((oldPlans) =>
+      oldPlans.map((plan, idx) =>
+        idx === activePlanIndex ? { ...plan, name: e.target.value } : plan
+      )
+    );
     sendPlansUpdate(updatedPlans);
   };
 
-  const handleCourseRemove = (year, idx) => {
-    const updatedPlans = [...plans];
-    updatedPlans[activePlanIndex].years[year].splice(idx, 1);
-    setPlans(updatedPlans);
-    sendPlansUpdate(updatedPlans);
-  };
+  const handleCourseRemove = React.useCallback(
+    (year, idx) => {
+      const updatedPlans = [...plans];
+      updatedPlans[activePlanIndex].years[year].splice(idx, 1);
+      setPlans(updatedPlans);
+      sendPlansUpdate(updatedPlans);
+    },
+    [plans, activePlanIndex]
+  );
 
-  const handleAddPlan = () => {
-    setPlans((prev) => [
-      ...prev,
-      {
-        name: "",
-        years: {
-          "9th Grade": [],
-          "10th Grade": [],
-          "11th Grade": [],
-          "12th Grade": [],
+  const handleAddPlan = React.useCallback(() => {
+    setPlans((prev) => {
+      const newPlans = [
+        ...prev,
+        {
+          name: "",
+          years: {
+            "9th Grade": [],
+            "10th Grade": [],
+            "11th Grade": [],
+            "12th Grade": [],
+          },
         },
-      },
-    ]);
-    sendPlansUpdate(plans);
-    setActivePlanIndex(plans.length);
-  };
+      ];
+      console.log("plans:", newPlans);
+      sendPlansUpdate(newPlans);
+      setActivePlanIndex(newPlans.length - 1);
+      return newPlans;
+    });
+  }, [plans]);
 
   const renderComments = () => {
     const planId = plans[activePlanIndex]?.id;
@@ -623,6 +691,63 @@ export default function FourYearPlanner() {
           '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       }}
     >
+      <Paper
+        sx={{
+          background: "rgba(255, 255, 255, 0.05)",
+          backdropFilter: "blur(20px)",
+          border: "1px solid rgba(148, 163, 184, 0.1)",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)",
+          position: "relative",
+          marginTop: 10,
+          zIndex: 100,
+          color: "white",
+          width: 300,
+          borderRadius: "16px",
+          padding: 2,
+          "&::before": {
+            content: '""',
+            position: "absolute",
+            top: -1,
+            left: -1,
+            right: -1,
+            height: "2px",
+            background:
+              "linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), transparent)",
+            borderRadius: "16px 16px 0 0",
+          },
+        }}
+      >
+        <h3
+          style={{
+            margin: "0 0 12px 0",
+            fontWeight: 600,
+            fontSize: "1.25rem",
+            color: "rgba(59, 130, 246, 0.9)", // subtle blue accent to match gradient
+            textAlign: "center",
+            userSelect: "none",
+          }}
+        >
+          Current Viewers
+        </h3>
+
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {viewers.map((item, i) => (
+            <li
+              key={i}
+              style={{
+                padding: "6px 0",
+                borderBottom:
+                  i !== viewers.length - 1
+                    ? "1px solid rgba(255,255,255,0.1)"
+                    : "none",
+              }}
+            >
+              {item.name}
+            </li>
+          ))}
+        </ul>
+      </Paper>
+
       {/* <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', marginTop: "50px" }}>
         <h1>WebSocket Chat Test</h1>
 
@@ -714,7 +839,7 @@ export default function FourYearPlanner() {
           p: 4,
           maxWidth: 900,
           margin: "auto",
-          mt: 12,
+          mt: 2,
           borderRadius: "20px",
           background: "rgba(255, 255, 255, 0.05)",
           backdropFilter: "blur(20px)",
@@ -749,52 +874,12 @@ export default function FourYearPlanner() {
         </Typography>
 
         <Box sx={{ borderBottom: 1, borderColor: "rgba(148, 163, 184, 0.2)" }}>
-          <Tabs
-            value={activePlanIndex}
-            onChange={(_, newIndex) => setActivePlanIndex(newIndex)}
-            variant="scrollable"
-            scrollButtons="auto"
-            sx={{
-              "& .MuiTab-root": {
-                color: "#cbd5e1",
-                textTransform: "none",
-                fontWeight: "500",
-                "&.Mui-selected": {
-                  color: "#60a5fa",
-                },
-              },
-              "& .MuiTabs-indicator": {
-                backgroundColor: "#60a5fa",
-              },
-            }}
-          >
-            {plans.map((plan, idx) => (
-              <Tab
-                key={idx}
-                label={plan.name || `Plan ${idx + 1}`}
-                sx={{ minWidth: 120 }}
-              />
-            ))}
-            <Button
-              onClick={handleAddPlan}
-              size="small"
-              variant="outlined"
-              sx={{
-                ml: 1,
-                textTransform: "none",
-                fontWeight: "500",
-                color: "#60a5fa",
-                borderColor: "rgba(96, 165, 250, 0.3)",
-                borderRadius: "8px",
-                "&:hover": {
-                  borderColor: "#60a5fa",
-                  backgroundColor: "rgba(96, 165, 250, 0.1)",
-                },
-              }}
-            >
-              + New
-            </Button>
-          </Tabs>
+          <PlanTabs
+            plans={plans}
+            activePlanIndex={activePlanIndex}
+            setActivePlanIndex={setActivePlanIndex}
+            handleAddPlan={handleAddPlan}
+          />
         </Box>
 
         {plans.length === 0 ? (
@@ -838,65 +923,12 @@ export default function FourYearPlanner() {
               />
 
               {defaultYears.map((year) => (
-                <Box key={year} sx={{ mb: 4 }}>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      mb: 2,
-                      color: "#ffffff",
-                      fontWeight: "600",
-                    }}
-                  >
-                    {year}
-                  </Typography>
-                  <Divider
-                    sx={{ mb: 2, borderColor: "rgba(148, 163, 184, 0.2)" }}
-                  />
-
-                  {plans[activePlanIndex].years[year].length === 0 ? (
-                    <Typography
-                      color="text.secondary"
-                      sx={{
-                        fontStyle: "italic",
-                        color: "#94a3b8",
-                      }}
-                    >
-                      No courses added.
-                    </Typography>
-                  ) : (
-                    plans[activePlanIndex].years[year].map((course, idx) => (
-                      <Box
-                        key={idx}
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          mb: 1,
-                          p: 2,
-                          backgroundColor: "rgba(255, 255, 255, 0.03)",
-                          borderRadius: "8px",
-                          border: "1px solid rgba(148, 163, 184, 0.1)",
-                        }}
-                      >
-                        <Typography sx={{ flexGrow: 1, color: "#ffffff" }}>
-                          {course}
-                        </Typography>
-                        <IconButton
-                          aria-label="delete"
-                          size="small"
-                          onClick={() => handleCourseRemove(year, idx)}
-                          sx={{
-                            color: "#f87171",
-                            "&:hover": {
-                              backgroundColor: "rgba(248, 113, 113, 0.1)",
-                            },
-                          }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    ))
-                  )}
-                </Box>
+                <YearCourses
+                  key={year}
+                  year={year}
+                  courses={plans[activePlanIndex].years[year]}
+                  handleCourseRemove={handleCourseRemove}
+                />
               ))}
 
               <Box
@@ -951,12 +983,16 @@ export default function FourYearPlanner() {
                   ))}
                 </TextField>
 
-                <TextField
-                  label="Course Name"
+                <Autocomplete
+                  freeSolo
+                  options={[...courses.keys()]}
                   value={newCourse.name}
-                  onChange={(e) =>
-                    setNewCourse((prev) => ({ ...prev, name: e.target.value }))
-                  }
+                  onChange={(event, newValue) => {
+                    setNewCourse((prev) => ({ ...prev, name: newValue || "" }));
+                  }}
+                  onInputChange={(event, newInputValue) => {
+                    setNewCourse((prev) => ({ ...prev, name: newInputValue }));
+                  }}
                   size="small"
                   sx={{
                     flexGrow: 1,
@@ -983,6 +1019,9 @@ export default function FourYearPlanner() {
                       color: "#ffffff",
                     },
                   }}
+                  renderInput={(params) => (
+                    <TextField {...params} label="Course Name" />
+                  )}
                 />
 
                 <Button
@@ -1020,7 +1059,7 @@ export default function FourYearPlanner() {
                     },
                   }}
                 >
-                  Save Courses
+                  Save Plan
                 </Button>
 
                 <Button

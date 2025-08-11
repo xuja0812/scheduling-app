@@ -21,7 +21,6 @@ function App() {
         <Route path="/classes" element={<YearClassesList />} />
         <Route path="/leave" element={<Logout />} />
         <Route path="/all" element={<AdminViewAllPlans />} />
-        <Route path="/conflicts" element={<ScheduleConflict />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/account" element={<Account />} />
       </Routes>

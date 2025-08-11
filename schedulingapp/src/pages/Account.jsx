@@ -34,6 +34,7 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SchoolIcon from "@mui/icons-material/School";
 import SaveIcon from "@mui/icons-material/Save";
+import FlowChart from "../components/FlowChart";
 
 const subtleGlow = keyframes`
   0%, 100% { opacity: 0.9; }
@@ -52,6 +53,7 @@ export default function Account() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
+  const [eligibleClasses, setEligibleClasses] = useState([]);
 
   const backendUrl =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
@@ -61,7 +63,24 @@ export default function Account() {
   useEffect(() => {
     fetchCompletedClasses();
     fetchAvailableClasses();
+    fetchEligibleClasses();
   }, []);
+
+  const fetchEligibleClasses = async () => {
+    try {
+        const response = await fetch(`${backendUrl}/api/eligible-courses`, {
+            credentials: "include",
+          });
+        if (response.ok) {
+            const eligible = await response.json();
+            setEligibleClasses(eligible);
+        }
+      } catch (error) {
+        console.error("Failed to fetch eligible classes:", error);
+      } finally {
+        setLoading(false);
+      }
+  }
 
   const fetchCompletedClasses = async () => {
     try {
@@ -71,7 +90,7 @@ export default function Account() {
       });
       if (response.ok) {
         const data = await response.json();
-        console.log("data: " + data);
+        console.log("completed classes:",data);
         setCompletedClasses(data);
       }
     } catch (error) {
@@ -89,7 +108,7 @@ export default function Account() {
       });
       if (response.ok) {
         const data = await response.json();
-        console.log(data);
+        console.log("data:",data);
         setAvailableClasses(
           data.map((item, i) => {
             return item.name;
@@ -119,28 +138,42 @@ export default function Account() {
 
       if (response.ok) {
         const newClass = await response.json();
+        console.log("new class:",newClass);
         setCompletedClasses((prev) => [...prev, newClass]);
         handleCloseDialog();
+        // update eligible courses
+        const eligibleRes = await fetch(`${backendUrl}/api/eligible-courses`, {
+          credentials: "include",
+        });
+        const eligible = await eligibleRes.json();
+        setEligibleClasses(eligible);
       }
     } catch (error) {
       console.error("Failed to add completed class:", error);
     }
   };
 
-  const handleRemoveClass = async (className) => {
+  const handleRemoveClass = async (courseId) => {
+    console.log('course id trying to delete:',courseId);
     try {
       const response = await fetch(
-        `${backendUrl}/api/completed-courses/${className}`,
+        `${backendUrl}/api/completed-courses/${courseId}`,
         {
           method: "DELETE",
           credentials: "include",
         }
       );
-
+      const data = await response.json();
+      console.log("deleting data:",data);
       if (response.ok) {
         setCompletedClasses((prev) =>
-          prev.filter((cls) => cls.class_name !== className)
+          prev.filter((cls) => cls.class_name !== data.class_name)
         );
+        const eligibleRes = await fetch(`${backendUrl}/api/eligible-courses`, {
+            credentials: "include",
+          });
+          const eligible = await eligibleRes.json();
+          setEligibleClasses(eligible);
       }
     } catch (error) {
       console.error("Failed to remove completed class:", error);
@@ -165,22 +198,23 @@ export default function Account() {
         minHeight: "100vh",
         background: "linear-gradient(180deg, #0f172a 0%, #1c2333 100%)",
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
-        justifyContent: "center",
+        justifyContent: "flex-start",
         px: 2,
         py: 4,
-        fontFamily:
-          '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         position: "relative",
       }}
     >
+      {/* Main Course Entry Section */}
       <Paper
         elevation={0}
         sx={{
           p: 8,
           borderRadius: "20px",
           maxWidth: "720px",
-          width: "100%",
+          width: "60%",
           background: "rgba(255, 255, 255, 0.05)",
           backdropFilter: "blur(20px)",
           border: "1px solid rgba(148, 163, 184, 0.1)",
@@ -188,15 +222,15 @@ export default function Account() {
           animation: `${fadeIn} 0.6s ease-out`,
           position: "relative",
           transition: "all 0.2s ease-out",
-          top: "40px",
+          mb: 4,
+          mt: 16
         }}
       >
         <Box sx={{ mb: 6, textAlign: "center" }}>
           <Typography
             variant="h3"
             sx={{
-              fontFamily:
-                '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               fontWeight: "700",
               fontSize: "2rem",
               color: "#ffffff",
@@ -228,6 +262,7 @@ export default function Account() {
             Track the classes you've already completed
           </Typography>
         </Box>
+  
         <Box sx={{ mb: 4, textAlign: "center" }}>
           <Button
             variant="contained"
@@ -253,6 +288,7 @@ export default function Account() {
             Add Course
           </Button>
         </Box>
+  
         <Box sx={{ mb: 6 }}>
           {loading ? (
             <Box sx={{ textAlign: "center", py: 4 }}>
@@ -318,19 +354,9 @@ export default function Account() {
                       >
                         {course.class_name}
                       </Typography>
-                      <Chip
-                        label={`Completed in ${course.year}`}
-                        size="small"
-                        sx={{
-                          background: "rgba(34, 197, 94, 0.1)",
-                          color: "#22c55e",
-                          border: "1px solid rgba(34, 197, 94, 0.2)",
-                          fontWeight: "500",
-                        }}
-                      />
                     </Box>
                     <IconButton
-                      onClick={() => handleRemoveClass(course.class_name)}
+                      onClick={() => handleRemoveClass(course.id)}
                       sx={{
                         color: "#ef4444",
                         "&:hover": {
@@ -346,6 +372,7 @@ export default function Account() {
             </Stack>
           )}
         </Box>
+  
         <Box
           sx={{
             position: "absolute",
@@ -353,12 +380,86 @@ export default function Account() {
             left: -1,
             right: -1,
             height: "2px",
-            background:
-              "linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), transparent)",
+            background: "linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), transparent)",
             borderRadius: "20px 20px 0 0",
           }}
         />
       </Paper>
+  
+      {/* FlowChart Section */}
+      {completedClasses.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 6,
+            borderRadius: "20px",
+            maxWidth: "1200px",
+            width: "70%",
+            background: "rgba(255, 255, 255, 0.05)",
+            backdropFilter: "blur(20px)",
+            border: "1px solid rgba(148, 163, 184, 0.1)",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)",
+            position: "relative",
+            transition: "all 0.2s ease-out",
+          }}
+        >
+          <Box sx={{ mb: 4, textAlign: "center" }}>
+            <Typography
+              variant="h4"
+              sx={{
+                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                fontWeight: "700",
+                fontSize: "1.75rem",
+                color: "#ffffff",
+                mb: 1,
+                position: "relative",
+                "&::after": {
+                  content: '""',
+                  position: "absolute",
+                  bottom: -4,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: "60px",
+                  height: "3px",
+                  background: "linear-gradient(90deg, #10b981, #34d399)",
+                  borderRadius: "2px",
+                },
+              }}
+            >
+              Available Next Courses
+            </Typography>
+            <Typography
+              variant="body1"
+              sx={{
+                color: "#cbd5e1",
+                fontSize: "1rem",
+                mt: 2,
+              }}
+            >
+              Based on your completed courses, here's what you can take next
+            </Typography>
+          </Box>
+  
+          <FlowChart
+            eligibleClasses={eligibleClasses}
+            completedClasses={completedClasses}
+          />
+  
+          <Box
+            sx={{
+              position: "absolute",
+              top: -1,
+              left: -1,
+              right: -1,
+              height: "2px",
+              background: "linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.5), transparent)",
+              borderRadius: "20px 20px 0 0",
+            }}
+          />
+        </Paper>
+      )}
+  
+      {/* Dialog remains the same */}
       <Dialog
         open={addDialogOpen}
         onClose={handleCloseDialog}
@@ -423,7 +524,7 @@ export default function Account() {
                 },
               }}
             />
-
+  
             <FormControl fullWidth>
               <InputLabel
                 sx={{

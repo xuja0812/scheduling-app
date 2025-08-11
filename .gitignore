@@ -1,1 +1,8 @@
 docker-compose.yml
+aws/.terraform/
+aws/.terraform.lock.hcl
+aws/terraform.tfstate
+aws/terraform.tfstate.backup
+aws/terraform.tfvars
+aws/dist/
+docker-compose.aws.yml

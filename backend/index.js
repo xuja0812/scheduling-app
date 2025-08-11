@@ -1,3 +1,5 @@
+process.setMaxListeners(0);
+
 const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
@@ -9,7 +11,8 @@ const http = require("http");
 const jwt = require("jsonwebtoken");
 const WebSocket = require("ws");
 const Redis = require("ioredis");
-const ScheduleOptimizer = require("./services/scheduleOptimizer");
+const rateLimit = require("express-rate-limit");
+const { emitWarning } = require("process");
 require("dotenv").config();
 
 const app = express();
@@ -30,6 +33,27 @@ app.use(
     credentials: true,
   })
 );
+
+/**
+ * Rate limiting setup
+ */
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000000000,
+  message: "Too many requests from this IP",
+});
+
+app.use("/api/", limiter);
+
+/**
+ * Auth rate limiting
+ */
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5000000,
+});
+
+app.use("/auth/", authLimiter);
 
 /**
  * Express app setup
@@ -90,16 +114,16 @@ const authenticateToken = (req, res, next) => {
 /**
  * Redis cache middleware
  */
-const cache = (duration = 300) => {
+const cache = (duration, key) => {
   return async (req, res, next) => {
-    const user_id = req.user?.id || "anonymous";
-    const key = `${req.originalUrl}:user:${user_id}`;
     try {
       const cached = await redis.get(key);
       if (cached) {
+        console.log(`Cache hit for key: ${key}`);
         return res.json(JSON.parse(cached));
+      } else {
+        console.log(`Cache miss for key: ${key}`);
       }
-
       const originalJson = res.json;
       res.json = function (data) {
         redis.setex(key, duration, JSON.stringify(data));
@@ -107,11 +131,49 @@ const cache = (duration = 300) => {
       };
       next();
     } catch (err) {
-      console.error("Cache error: " + err);
+      console.error("Cache error:", err);
       next();
     }
   };
 };
+
+/**
+ * Metrics tracking
+ */
+const metrics = {
+  requests: 0,
+  websocketConnections: 0,
+  redisMessages: 0,
+  errors: 0,
+  responseTime: [],
+};
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    metrics.responseTime.push(duration);
+    if (metrics.responseTime.length > 100) metrics.responseTime.shift();
+  });
+  next();
+});
+
+/**
+ * Request tracking middleware
+ */
+app.use((req, res, next) => {
+  metrics.requests++;
+  next();
+});
+
+/**
+ * Error tracking middleware
+ */
+app.use((err, req, res, next) => {
+  metrics.errors++;
+  console.error(`Error: ${err.message}`);
+  res.status(500).json({ error: "Internal server error" });
+});
 
 /**
  * Creating WebSockets server and connections
@@ -120,205 +182,376 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const rooms = new Map();
 
-wss.on("connection", (ws) => {
-  console.log("New client connected");
+/**
+ * Circuit breaker logic
+ */
 
-  ws.on("message", (message) => {
-    console.log("Received:", message.toString());
+const circuitBreaker = {
+  failures: 0,
+  threshold: 5,
+  cooldown: 30000,
+  open: false,
+  nextAttempt: 0,
+}
 
-    try {
-      const { type } = JSON.parse(message.toString());
-      /**
-       * Open a new room (when a counselor edits a student's
-       * schedule or a student edits their own schedules)
-       */
-      if (type === "join-student-room") {
-        const { data } = JSON.parse(message.toString());
-        const { studentId, userId, userType } = data;
-        rooms.forEach((clients, roomId) => {
-          clients.delete(ws);
-          if (clients.size === 0) rooms.delete(roomId);
-        });
-        if (!rooms.has(studentId)) {
-          rooms.set(studentId, new Set());
-        }
-        rooms.get(studentId).add(ws);
-        ws.studentId = studentId;
-        ws.userId = userId;
-        ws.userType = userType;
+/**
+ * Check if Redis is healthy
+ */
+function canUseRedis() {
+  if (!circuitBreaker.open) return true;
+  if (Date.now() > circuitBreaker.nextAttempt) {
+    circuitBreaker.open = false; 
+    circuitBreaker.failures = 0;
+    return true;
+  }
+  return false;
+}
 
-        console.log(`${userType} ${userId} joined room ${studentId}`);
-        console.log(
-          `Room ${studentId} now has ${rooms.get(studentId).size} clients`
-        );
-        ws.send(
-          JSON.stringify({
-            type: "room-joined",
-            data: { studentId, userType, userId },
-          })
-        );
-      } else if (type === "chat-message") {
-        /**
-         * Chat message (TESTING ONLY)
-         */
-        console.log(
-          `Chat message from ${ws.userType} ${ws.userId} in room ${ws.studentId}`
-        );
-        if (ws.studentId && rooms.has(ws.studentId)) {
-          const roomClients = rooms.get(ws.studentId);
-          console.log(
-            `Room ${ws.studentId} has ${roomClients.size} total clients`
-          );
+/**
+ * Safely publishes message to Redis instance
+ */
+async function safePublish(channel, message) {
+  if (!canUseRedis()) {
+    console.warn("Circuit open - skipping Redis publish");
+    return;
+  }
+  try {
+    await safePublish(channel, message);
+    circuitBreaker.failures = 0; 
+  } catch (err) {
+    handleRedisFailure(err);
+  }
+}
 
-          const parsedMessage = JSON.parse(message.toString());
+let failures = 0;
+let open = false;
+let nextAttempt = 0;
+const FAILURE_THRESHOLD = 5;
+const COOLDOWN = 30000; // 30 sec
 
-          let messagesSent = 0;
-          roomClients.forEach((client) => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(
-                JSON.stringify({
-                  type: "chat-message",
-                  message: parsedMessage.message,
-                  sender: parsedMessage.sender,
-                  timestamp: parsedMessage.timestamp,
-                })
-              );
-              messagesSent++;
-              console.log(
-                `Sent message to ${client.userType} ${client.userId}`
-              );
-            }
-          });
+async function safePublish(channel, message) {
+  if (open && Date.now() < nextAttempt) {
+    console.log("Circuit open — skipping Redis publish");
+    return;
+  }
 
-          console.log(
-            `Message sent to ${messagesSent} other clients in room ${ws.studentId}`
-          );
-        }
-      } else if (type === "plans-update") {
-        /**
-         * Update a plan by adding a course or something else
-         */
-        const parsedMessage = JSON.parse(message.toString());
-        if (ws.studentId && rooms.has(ws.studentId)) {
-          const roomClients = rooms.get(ws.studentId);
-          console.log(
-            `Room ${ws.studentId} has ${roomClients.size} total clients`
-          );
-          roomClients.forEach((client) => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(
-                JSON.stringify({
-                  type: "plans-update",
-                  plans: parsedMessage.plans,
-                  sender: parsedMessage.sender,
-                })
-              );
-              console.log(`Sent plans to ${client.userType} ${client.userId}`);
-            }
-          });
-        }
-      } else if (type === "comments-update") {
-        /**
-         * Update a plan's comments
-         */
-        const parsedMessage = JSON.parse(message.toString());
-        if (ws.studentId && rooms.has(ws.studentId)) {
-          const roomClients = rooms.get(ws.studentId);
-          console.log(
-            `Room ${ws.studentId} has ${roomClients.size} total clients`
-          );
-          roomClients.forEach((client) => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(
-                JSON.stringify({
-                  type: "comments-update",
-                  comments: parsedMessage.comments,
-                  sender: parsedMessage.sender,
-                })
-              );
-              console.log(
-                `Sent comments to ${client.userType} ${client.userId}`
-              );
-            }
-          });
-        }
-      } else {
-        ws.send(`Server received: ${message}`);
-      }
-    } catch (error) {
-      console.error("Error parsing message:", error);
-      ws.send(`Server received: ${message}`);
+  try {
+    await pubRedis.publish(channel, message);
+    failures = 0; // reset on success
+    open = false;
+  } catch (err) {
+    failures++;
+    if (failures >= FAILURE_THRESHOLD) {
+      open = true;
+      nextAttempt = Date.now() + COOLDOWN;
+      console.log("Circuit opened, pausing Redis calls");
     }
+    console.error("Redis publish failed", err);
+  }
+}
+
+function handleRedisFailure(err) {
+  circuitBreaker.failures++;
+  console.error("Redis error:", err.message);
+
+  if (circuitBreaker.failures >= circuitBreaker.threshold) {
+    console.warn("Opening Redis circuit breaker");
+    circuitBreaker.open = true;
+    circuitBreaker.nextAttempt = Date.now() + circuitBreaker.cooldown;
+  }
+}
+
+/**
+ * Redis pub/sub configuration with ioredis
+ */
+const pubRedis = new Redis({
+  port: 6379,
+  host: process.env.REDIS_HOST || "127.0.0.1",
+});
+
+const subRedis = new Redis({
+  port: 6379,
+  host: process.env.REDIS_HOST || "127.0.0.1",
+});
+
+// Subscribe to channels
+subRedis.subscribe("chat-message", "plans-update", "comments-update", "presence-update");
+
+const presenceCounts = {};
+
+subRedis.on("message", (channel, message) => {
+  metrics.redisMessages++;
+  try {
+    const { studentId, data } = JSON.parse(message);
+    if (rooms.has(studentId)) {
+      const clients = rooms.get(studentId);
+      clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(data));
+        }
+      });
+    }
+  } catch (err) {
+    console.error("Error parsing Redis message:", err);
+  }
+});
+
+subRedis.on("error", (err) => {
+  handleRedisFailure(err);
+})
+
+pubRedis.on("error", (err) => {
+  handleRedisFailure(err);
+})
+
+wss.on("connection", (ws, req) => {
+  metrics.websocketConnections++;
+
+  function getTokenFromCookie(cookieHeader) {
+    if (!cookieHeader) return null;
+    const cookies = cookieHeader.split(";").map((c) => c.trim());
+    for (const cookie of cookies) {
+      const [key, val] = cookie.split("=");
+      if (key === "token") return decodeURIComponent(val);
+    }
+    return null;
+  }
+
+  // Extract token from sec-websocket-protocol or query param
+  let token = getTokenFromCookie(req.headers.cookie);
+
+  if (!token) {
+    ws.close(1008, "Access token required");
+    return;
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      ws.close(1008, "Invalid or expired token");
+      return;
+    }
+    ws.user = user;
+    ws.userId = user.id;
+    ws.userType = user.type;
+
+    ws.on("message", async (message) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(message.toString());
+      } catch {
+        ws.send(JSON.stringify({ error: "Invalid JSON format" }));
+        return;
+      }
+
+      const { type, data } = parsed;
+
+      // Just handle your existing message types with minimal changes:
+      try {
+        if (type === "join-student-room") {
+          const { studentId, userId, userType } = data;
+
+          rooms.forEach((clients, roomId) => {
+            clients.delete(ws);
+            if (clients.size === 0) rooms.delete(roomId);
+          });
+
+          if (!rooms.has(studentId)) rooms.set(studentId, new Set());
+          rooms.get(studentId).add(ws);
+
+          const result = await pool.query(
+            "SELECT name FROM users WHERE id = $1",
+            [ws.userId]
+          );
+          const name = result.rows[0]?.name || "Unknown";
+
+          ws.studentId = studentId;
+          ws.userId = userId;
+          ws.userType = userType;
+
+          await safePublish(
+            "presence-update",
+            JSON.stringify({
+              studentId: studentId,
+              data: {
+                type: "presence-update",
+                action: "join",
+                user: { id: ws.userId, name }
+              },
+            })
+          )
+
+          ws.send(
+            JSON.stringify({
+              type: "room-joined",
+              data: { studentId, userType, userId },
+            })
+          );
+        } else if (type === "chat-message") {
+          await safePublish(
+            "chat-message",
+            JSON.stringify({
+              studentId: ws.studentId,
+              data: {
+                type: "chat-message",
+                message: parsed.message,
+                sender: parsed.sender,
+                timestamp: parsed.timestamp,
+              },
+            })
+          );
+        } else if (type === "plans-update") {
+          await safePublish(
+            "plans-update",
+            JSON.stringify({
+              studentId: ws.studentId,
+              data: {
+                type: "plans-update",
+                plans: parsed.plans,
+                sender: parsed.sender,
+              },
+            })
+          );
+        } else if (type === "comments-update") {
+          await safePublish(
+            "comments-update",
+            JSON.stringify({
+              studentId: ws.studentId,
+              data: {
+                type: "comments-update",
+                comments: parsed.comments,
+                sender: parsed.sender,
+              },
+            })
+          );
+        } else {
+          ws.send(
+            JSON.stringify({ info: `Server received unknown type: ${type}` })
+          );
+        }
+      } catch (error) {
+        console.error("Error handling WS message:", error);
+        ws.send(JSON.stringify({ error: "Internal server error" }));
+      }
+    });
+
+    ws.on("close", async () => {
+      if (ws.studentId) {
+        const room = rooms.get(ws.studentId);
+        if (room) {
+          room.delete(ws);
+          if (room.size === 0) rooms.delete(ws.studentId);
+        }
+        await safePublish("presence-update", JSON.stringify({
+          studentId: ws.studentId,
+          data: {
+            type: "presence-update",
+            action: "leave",
+            user: { id: ws.userId }
+          }
+        }));
+      }
+    });
   });
+});
+module.exports = { app, pool };
 
-  ws.on("close", () => {
-    if (ws.studentId) {
-      const room = rooms.get(ws.studentId);
-      if (room) {
-        room.delete(ws);
-        if (room.size === 0) {
-          rooms.delete(ws.studentId);
-        }
-        console.log(`Client left room ${ws.studentId}`);
-      }
-    }
-    console.log("Client disconnected");
+/**
+ * ALL GET
+ *
+ * Metrics endpoint
+ */
+app.get("/api/metrics", (req, res) => {
+  res.json({
+    ...metrics,
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    timestamp: new Date().toISOString(),
   });
 });
 
-module.exports = { app, pool };
+app.get('/', (req, res) => {
+  res.send('Hello from backend!');
+});
+
+app.get("/admin/dashboard", (req, res) => {
+  res.send(`
+    <html>
+    <head><title>System Dashboard</title></head>
+    <body style="font-family: monospace; background: #1a1a1a; color: #00ff00; padding: 20px;">
+      <h1>🚀 System Status Dashboard</h1>
+      <div id="metrics"></div>
+      <script>
+        const ws = new WebSocket('ws://localhost:8080');
+        setInterval(() => {
+          fetch('/api/metrics').then(r => r.json()).then(data => {
+            document.getElementById('metrics').innerHTML = 
+              '<pre>' + JSON.stringify({
+                ...data,
+                timestamp: new Date().toLocaleString(),
+                status: data.errors < 10 ? '✅ HEALTHY' : '⚠️  DEGRADED'
+              }, null, 2) + '</pre>';
+          });
+        }, 2000);
+      </script>
+    </body>
+    </html>
+  `);
+});
 
 /**
  * COUNSELOR GET
  *
  * Allows the counselor to see all current student plans
+ *
+ * Caching strategy:
+ * Keep the key as the original URL, since all counselors across
+ * the school will see the same schedule.
  */
-app.get(
-  "/api/admin/all-plans",
-  authenticateToken,
-  cache(300),
-  async (req, res) => {
-    logReq(req);
+app.get("/api/admin/all-plans", authenticateToken, async (req, res) => {
+  logReq(req);
 
-    const query = `
-    SELECT plans.id as plan_id, plans.name as plan_name, users.email as student_email,
-           plan_courses.class_code, plan_courses.year, plan_courses.semester
+  const query = `
+    SELECT plans.id as plan_id, plans.name as plan_name, users.email as student_email, users.id as id,
+           plan_courses.class_code, plan_courses.year
     FROM plans
     JOIN users ON plans.user_id = users.id
     LEFT JOIN plan_courses ON plans.id = plan_courses.plan_id
-    ORDER BY users.email, plans.name, plan_courses.year, plan_courses.semester
+    ORDER BY users.email, plans.name, plan_courses.year
   `;
 
-    try {
-      const { rows } = await pool.query(query);
+  try {
+    const { rows } = await pool.query(query);
 
-      const plansMap = {};
-      rows.forEach((row) => {
-        if (!plansMap[row.plan_id]) {
-          plansMap[row.plan_id] = {
-            planId: row.plan_id,
-            planName: row.plan_name,
-            studentEmail: row.student_email,
-            courses: [],
-          };
-        }
-        if (row.class_code) {
-          plansMap[row.plan_id].courses.push({
-            class_code: row.class_code,
-            year: row.year,
-            semester: row.semester,
-          });
-        }
-      });
+    const plansMap = {};
+    rows.forEach((row) => {
+      if (!plansMap[row.plan_id]) {
+        plansMap[row.plan_id] = {
+          planId: row.plan_id,
+          planName: row.plan_name,
+          studentEmail: row.student_email,
+          studentId: row.id,
+          courses: [],
+        };
+      }
+      if (row.class_code) {
+        plansMap[row.plan_id].courses.push({
+          class_code: row.class_code,
+          year: row.year,
+        });
+      }
+    });
 
-      const allPlans = Object.values(plansMap);
-      res.json(allPlans);
-    } catch (err) {
-      console.error("Error fetching all plans:", err.message);
-      res.status(500).json({ error: err.message });
-    }
+    const allPlans = Object.values(plansMap);
+    res.json(allPlans);
+  } catch (err) {
+    console.error("Error fetching all plans:", err.message);
+    res.status(500).json({ error: err.message });
   }
-);
+});
+
+/**
+ * Logging middleware
+ */
 
 /**
  * ALL GET
@@ -327,10 +560,6 @@ app.get(
  */
 app.get(
   "/auth/google",
-  (req, res, next) => {
-    logReq(req);
-    next();
-  },
   passport.authenticate("google", {
     scope: ["profile", "email"],
     session: false,
@@ -344,25 +573,25 @@ app.get(
  */
 app.get(
   "/auth/google/callback",
-  (req, res, next) => {
-    logReq(req);
-    next();
-  },
-  // TODO: put redirect URLs as env variables
   passport.authenticate("google", {
-    // failureRedirect: 'http://localhost:5173/login',
-    failureRedirect: "https://scheduler-two-rho.vercel.app",
+    failureRedirect: `${process.env.FRONTEND_URL}/login`,
     session: false,
   }),
   (req, res) => {
-    const { token } = req.user;
-    res.cookie("token", token, {
+    if (!req.user?.token) {
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/login?error=auth_failed`
+      );
+    }
+
+    res.cookie("token", req.user.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 24 * 60 * 60 * 1000,
+      sameSite: "strict",
+      maxAge: 15 * 60 * 1000, // 15 minutes
     });
-    // res.redirect(`https://scheduler-two-rho.vercel.app/dashboard`);
-    res.redirect("http://localhost:81/dashboard");
+
+    res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
   }
 );
 
@@ -382,8 +611,12 @@ app.get("/api/logout", (req, res) => {
  * ALL GET
  *
  * Retrieves current user's info
+ *
+ * Caching strategy:
+ * Since the data returned is small in size
+ * and is accessed infrequently, there's no need to cache it.
  */
-app.get("/api/me", authenticateToken, cache(300), (req, res) => {
+app.get("/api/me", authenticateToken, (req, res) => {
   logReq(req);
   res.json({ user: req.user });
 });
@@ -394,29 +627,25 @@ app.get("/api/me", authenticateToken, cache(300), (req, res) => {
  * Retrieves all schedules for a student based on their email
  * Does not rely on sessions
  */
-app.get("/api/admin/plans", authenticateToken, cache(300), async (req, res) => {
-  logReq(req);
-  try {
-    const email = req.get("student-email");
-    if (!email) {
-      return res.status(400).json({ error: "Email header required" });
-    }
-    const idResult = await pool.query("SELECT id FROM users WHERE email = $1", [
-      email,
-    ]);
-    if (idResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    const userId = idResult.rows[0].id;
+app.get(
+  "/api/admin/plans/:studentId",
+  authenticateToken,
+  (req, res, next) => {
+    logReq(req);
+    const studentId = req.params.studentId;
+    if (!studentId) {
+      return res.status(400).json({ error: "studentId parameter required" });
+    } // set userId from route param
+    next();
+  },
+  (req, res, next) => cache(30, `plans_${req.params.studentId}`)(req, res, next),
+  async (req, res) => {
     const result = await pool.query("SELECT * FROM plans WHERE user_id = $1", [
-      userId,
+      req.params.studentId,
     ]);
     res.json(result.rows);
-  } catch (err) {
-    console.error("Error fetching plans:", err.message);
-    res.status(500).json({ error: err.message });
   }
-});
+);
 
 /**
  * STUDENT GET
@@ -424,45 +653,93 @@ app.get("/api/admin/plans", authenticateToken, cache(300), async (req, res) => {
  * Retrieves all schedules for the current student
  * Relies on session
  */
-app.get("/api/plans", authenticateToken, cache(300), async (req, res) => {
-  logReq(req);
-  try {
-    const result = await pool.query("SELECT * FROM plans WHERE user_id = $1", [
-      req.user.id,
-    ]);
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Error fetching plans:", err.message);
-    res.status(500).json({ error: err.message });
+app.get(
+  "/api/plans",
+  authenticateToken,
+  (req, res, next) => cache(30, `plans_${req.user.id}`)(req, res, next), // cache middleware
+  async (req, res) => {
+    logReq(req);
+    try {
+      const result = await pool.query(
+        "SELECT * FROM plans WHERE user_id = $1",
+        [req.user.id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching plans:", err.message);
+      res.status(500).json({ error: err.message });
+    }
   }
-});
+);
 
 /**
  * ALL GET
  *
  * Retrieves a certain plan based on planId
  */
-app.get(
-  "/api/plans/:planId",
-  authenticateToken,
-  cache(300),
-  async (req, res) => {
-    logReq(req);
-    const { planId } = req.params;
+app.get("/api/plans/:planId", authenticateToken, async (req, res) => {
+  logReq(req);
+  const { planId } = req.params;
 
-    try {
-      const result = await pool.query(
-        "SELECT * FROM plan_courses WHERE plan_id = $1",
-        [planId]
-      );
-      res.json(result.rows);
-    } catch (err) {
-      console.error("Error fetching plan courses:", err.message);
-      res.status(500).json({ error: err.message });
-    }
+  try {
+    const result = await pool.query(
+      "SELECT * FROM plan_courses WHERE plan_id = $1",
+      [planId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching plan courses:", err.message);
+    res.status(500).json({ error: err.message });
   }
-);
+});
 
+/**
+ * COUNSELOR POST
+ * 
+ * Adds a plan for a student on the counselor's side
+ */
+app.post("/api/admin/plans/:studentId", authenticateToken, async (req, res) => {
+  logReq(req);
+  const { name, courses } = req.body;
+  const planId = uuidv4();
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    await client.query(
+      "INSERT INTO plans (id, user_id, name) VALUES ($1, $2, $3)",
+      [planId, req.params.studentId, name]
+    );
+
+    const insertCourseText = `
+      INSERT INTO plan_courses (plan_id, class_code, year, course_id)
+      VALUES ($1, $2, $3, $4)
+    `;
+    for (const course of courses) {
+      await client.query(insertCourseText, [
+        planId,
+        course.class_code,
+        course.year,
+        course.course_id,
+      ]);
+      console.log("course being inserted:", course);
+    }
+
+    await client.query("COMMIT");
+
+    // Invalidate cache for this user's plans list
+    await redis.del(`plans_${req.params.studentId}`);
+
+    res.json({ message: "Plan created successfully", planId });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error inserting plan and courses:", err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
 /**
  * STUDENT POST
  *
@@ -472,8 +749,6 @@ app.post("/api/plans", authenticateToken, async (req, res) => {
   logReq(req);
   const { name, courses } = req.body;
   const planId = uuidv4();
-
-  await redis.del(`/api/plans:user:${req.user.id}`);
 
   const client = await pool.connect();
   try {
@@ -485,7 +760,7 @@ app.post("/api/plans", authenticateToken, async (req, res) => {
     );
 
     const insertCourseText = `
-      INSERT INTO plan_courses (plan_id, class_code, year, semester)
+      INSERT INTO plan_courses (plan_id, class_code, year, course_id)
       VALUES ($1, $2, $3, $4)
     `;
     for (const course of courses) {
@@ -493,11 +768,16 @@ app.post("/api/plans", authenticateToken, async (req, res) => {
         planId,
         course.class_code,
         course.year,
-        course.semester,
+        course.course_id,
       ]);
+      console.log("course being inserted:", course);
     }
 
     await client.query("COMMIT");
+
+    // Invalidate cache for this user's plans list
+    await redis.del(`plans_${req.user.id}`);
+
     res.json({ message: "Plan created successfully", planId });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -519,20 +799,9 @@ app.put("/api/admin/plans/:planId", authenticateToken, async (req, res) => {
   const { planId } = req.params;
   const { name } = req.body;
   try {
-    const email = req.get("student-email");
-    if (!email) {
-      return res.status(400).json({ error: "Email header required" });
-    }
-    const idResult = await pool.query("SELECT id FROM users WHERE email = $1", [
-      email,
-    ]);
-    if (idResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    const userId = idResult.rows[0].id;
     const result = await pool.query(
-      "UPDATE plans SET name = $1 WHERE id = $2 AND user_id = $3",
-      [name, planId, userId]
+      "UPDATE plans SET name = $1 WHERE id = $2",
+      [name, planId]
     );
 
     if (result.rowCount === 0) {
@@ -580,28 +849,16 @@ app.put("/api/plans/:planId", authenticateToken, async (req, res) => {
  * in the same WebSockets room
  */
 app.put(
-  "/api/admin/plans/:planId/courses",
+  "/api/admin/plans/:planId/courses/:studentId",
   authenticateToken,
   async (req, res) => {
     logReq(req);
     const { planId } = req.params;
     const { courses, name } = req.body;
     try {
-      const email = req.get("student-email");
-      if (!email) {
-        return res.status(400).json({ error: "Email header required" });
-      }
-      const idResult = await pool.query(
-        "SELECT id FROM users WHERE email = $1",
-        [email]
-      );
-      if (idResult.rows.length === 0) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      const userId = idResult.rows[0].id;
       const planResult = await pool.query(
-        "SELECT * FROM plans WHERE id = $1 AND user_id = $2",
-        [planId, userId]
+        "SELECT * FROM plans WHERE id = $1",
+        [planId]
       );
       if (planResult.rowCount === 0) {
         return res
@@ -613,15 +870,16 @@ app.put(
       await pool.query("BEGIN");
       for (const course of courses) {
         await pool.query(
-          `INSERT INTO plan_courses (plan_id, class_code, year, semester) 
+          `INSERT INTO plan_courses (plan_id, class_code, year, course_id) 
          VALUES ($1, $2, $3, $4)`,
-          [planId, course.class_code, course.year, course.semester]
+          [planId, course.class_code, course.year, course.course_id]
         );
       }
       await pool.query("UPDATE plans SET name = $1 WHERE id = $2", [
         name,
         planId,
       ]);
+      await redis.del(`plans_${req.params.studentId}`);
 
       await pool.query("COMMIT");
 
@@ -656,15 +914,16 @@ app.put("/api/plans/:planId/courses", authenticateToken, async (req, res) => {
     await pool.query("BEGIN");
     for (const course of courses) {
       await pool.query(
-        `INSERT INTO plan_courses (plan_id, class_code, year, semester) 
+        `INSERT INTO plan_courses (plan_id, class_code, year, course_id) 
          VALUES ($1, $2, $3, $4)`,
-        [planId, course.class_code, course.year, course.semester]
+        [planId, course.class_code, course.year, course.course_id]
       );
     }
     await pool.query("UPDATE plans SET name = $1 WHERE id = $2", [
       name,
       planId,
     ]);
+    await redis.del(`plans_${req.user.id}`);
 
     await pool.query("COMMIT");
 
@@ -681,25 +940,14 @@ app.put("/api/plans/:planId/courses", authenticateToken, async (req, res) => {
  *
  * Deletes a plan based on planId for a certain student email
  */
-app.delete("/api/admin/plans/:planId", authenticateToken, async (req, res) => {
+app.delete("/api/admin/plans/:planId/:studentId", authenticateToken, async (req, res) => {
   logReq(req);
   const { planId } = req.params;
 
   try {
-    const email = req.get("student-email");
-    if (!email) {
-      return res.status(400).json({ error: "Email header required" });
-    }
-    const idResult = await pool.query("SELECT id FROM users WHERE email = $1", [
-      email,
-    ]);
-    if (idResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    const userId = idResult.rows[0].id;
     const planResult = await pool.query(
-      "SELECT * FROM plans WHERE id = $1 AND user_id = $2",
-      [planId, userId]
+      "SELECT * FROM plans WHERE id = $1",
+      [planId]
     );
     if (planResult.rowCount === 0) {
       return res.status(404).json({ error: "Plan not found or unauthorized" });
@@ -710,7 +958,7 @@ app.delete("/api/admin/plans/:planId", authenticateToken, async (req, res) => {
     await pool.query("DELETE FROM plan_courses WHERE plan_id = $1", [planId]);
     await pool.query("DELETE FROM plans WHERE id = $1", [planId]);
     await pool.query("COMMIT");
-
+    await redis.del(`plans_${req.params.studentId}`);
     res.json({ message: "Plan deleted successfully" });
   } catch (err) {
     console.error("Error deleting plan:", err.message);
@@ -741,6 +989,7 @@ app.delete("/api/plans/:planId", authenticateToken, async (req, res) => {
     await pool.query("DELETE FROM plan_courses WHERE plan_id = $1", [planId]);
     await pool.query("DELETE FROM plans WHERE id = $1", [planId]);
     await pool.query("COMMIT");
+    await redis.del(`plans_${req.user.id}`);
 
     res.json({ message: "Plan deleted successfully" });
   } catch (err) {
@@ -757,8 +1006,6 @@ app.delete("/api/plans/:planId", authenticateToken, async (req, res) => {
  */
 app.post("/api/admin/comment", authenticateToken, async (req, res) => {
   logReq(req);
-
-  await redis.del(`/api/admin/comment:user:${req.user.id}`);
 
   const { planId, comment } = req.body;
   if (!planId || !comment) {
@@ -783,47 +1030,38 @@ app.post("/api/admin/comment", authenticateToken, async (req, res) => {
  *
  * Retrieves commments for the counselor's admin page for a schedule
  */
-app.get(
-  "/api/admin/comments/:planId",
-  authenticateToken,
-  cache(300),
-  async (req, res) => {
-    logReq(req);
+app.get("/api/admin/comments/:planId", authenticateToken, async (req, res) => {
+  logReq(req);
 
-    const { planId } = req.params;
-    try {
-      const result = await pool.query(
-        `SELECT comments.id, comments.text, comments.created_at, users.name AS author
+  const { planId } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT comments.id, comments.text, comments.created_at, users.name AS author
        FROM comments
        JOIN users ON comments.user_id = users.id
        WHERE plan_id = $1
        ORDER BY comments.created_at DESC`,
-        [planId]
-      );
-      res.json(result.rows);
-    } catch (err) {
-      console.error("Error fetching comments:", err.message);
-      res.status(500).json({ error: "Internal server error" });
-    }
+      [planId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching comments:", err.message);
+    res.status(500).json({ error: "Internal server error" });
   }
-);
+});
 
 /**
  * ALL GET
  *
  * Gets all comments for a plan
  */
-app.get(
-  "/api/plans/:planId/comments",
-  authenticateToken,
-  cache(300),
-  async (req, res) => {
-    logReq(req);
+app.get("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
+  logReq(req);
 
-    const { planId } = req.params;
+  const { planId } = req.params;
 
-    try {
-      const query = `
+  try {
+    const query = `
       SELECT 
         comments.id,
         comments.plan_id,
@@ -839,14 +1077,13 @@ app.get(
       ORDER BY comments.created_at ASC
     `;
 
-      const result = await pool.query(query, [planId]);
-      res.json(result.rows);
-    } catch (err) {
-      console.error("Error fetching comments with authors:", err.message);
-      res.status(500).json({ error: err.message });
-    }
+    const result = await pool.query(query, [planId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching comments with authors:", err.message);
+    res.status(500).json({ error: err.message });
   }
-);
+});
 
 /**
  * ALL POST
@@ -859,8 +1096,6 @@ app.post("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
   const { planId } = req.params;
   const { text } = req.body;
   const userId = req.user.id;
-
-  await redis.del(`/api/student/${planId}:user:${userId}`);
 
   if (!text || !text.trim()) {
     return res.status(400).json({ error: "Comment text is required" });
@@ -884,9 +1119,12 @@ app.post("/api/plans/:planId/comments", authenticateToken, async (req, res) => {
 /**
  * ONGOING: analytics
  */
-app.get("/api/analytics", authenticateToken, cache(300), async (req, res) => {
-  try {
-    const query = `
+app.get(
+  "/api/analytics/popular-classes",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const query = `
       SELECT 
         class_code,
         COUNT(*) as enrollment_count
@@ -894,16 +1132,69 @@ app.get("/api/analytics", authenticateToken, cache(300), async (req, res) => {
       GROUP BY class_code
       ORDER BY enrollment_count DESC;
     `;
-
-    const result = await pool.query(query);
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err });
+      
+      const result = await pool.query(query);
+      console.log("result from query FUCK:",result);
+      res.json(result.rows);
+    } catch (err) {
+      console.log("popular classes err:",err);
+      res.status(500).json({ error: err });
+    }
   }
-});
+);
+
+app.get(
+  "/api/analytics/high-credit-plans",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const query = `
+      SELECT u.name as user_name, p.name, pc.year, SUM(c.credits) as year_credits 
+      FROM users u 
+      JOIN plans p ON u.id = p.user_id 
+      JOIN plan_courses pc ON p.id = pc.plan_id 
+      JOIN courses c ON pc.course_id = c.id 
+      GROUP BY u.id, u.name, p.name, pc.year 
+      HAVING SUM(c.credits) > 6
+      ORDER BY year_credits DESC;
+    `;
+
+      const result = await pool.query(query);
+      console.log("result from query:",result.rows);
+      res.json(result.rows);
+    } catch (err) {
+      console.log('error:',err);
+      res.status(500).json({ error: err });
+    }
+  }
+);
+
+app.get(
+  "/api/analytics/no-plans",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const query = `
+      SELECT u.name, u.email
+      FROM users u 
+      LEFT JOIN plans p ON u.id = p.user_id 
+      WHERE p.id IS NULL AND u.role = 'student';
+    `;
+
+      const result = await pool.query(query);
+      console.log("result from no plans query:",result.rows);
+      res.json(result.rows);
+    } catch (err) {
+      console.log('error:',err);
+      res.status(500).json({ error: err });
+    }
+  }
+);
+
+app.get('/health', (req, res) => res.sendStatus(200));
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
 });
 
@@ -916,19 +1207,20 @@ server.listen(PORT, () => {
  *
  * Retrieve all available past classes
  */
-app.get("/api/classes", authenticateToken, cache(300), async (req, res) => {
+app.get("/api/classes", authenticateToken, async (req, res) => {
   try {
     const query = `
     SELECT 
-        class_name AS name,
-        credits,
-        category,
-        honors
+        id,
+        name,
+        credits
       FROM courses
     `;
     const result = await pool.query(query);
+    // console.log("result:",result);
     res.json(result.rows);
   } catch (err) {
+    // console.log("err:",err);
     res.status(500).json({ error: err });
   }
 });
@@ -939,21 +1231,194 @@ app.get("/api/classes", authenticateToken, cache(300), async (req, res) => {
  * Add a completed course for a user
  */
 app.post("/api/completed-courses", authenticateToken, async (req, res) => {
-  const user_id = req.user.id;
+  const userId = req.user.id;
   const { className, year } = req.body;
-  await redis.del(`/api/completed-courses:user:${user_id}`);
+  const client = await pool.connect();
   try {
-    const query = `
-  INSERT INTO completed_courses (user_id, class_name, year, course_id) 
-  VALUES ($1, $2, $3, (SELECT id FROM courses WHERE class_name = $2))
-`;
-    await pool.query("BEGIN");
-    const result = await pool.query(query, [user_id, className, year]);
-    await pool.query("COMMIT");
-    res.json({ class_name: className, year: year });
+    const courseRes = await client.query(
+      `SELECT id FROM courses WHERE name = $1`,
+      [className]
+    );
+    const courseId = courseRes.rows[0]?.id;
+    if (!courseId) res.status(404).json({ error: "Course not found " });
+
+    await client.query(
+      `
+        INSERT INTO user_courses (user_id, course_id)
+        VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+      `,
+      [userId, courseId]
+    );
+    console.log(
+      "returned after posting to completed courses:",
+      className + " " + courseId
+    );
+    res.json({ class_name: className, id: courseId });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: err });
+  }
+});
+
+/**
+ * ALL GET
+ *
+ * Returns all eligible courses for a user to take next
+ */
+app.get("/api/eligible-courses", authenticateToken, async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: "Unauthorized: missing user" });
+    }
+
+    const userId = req.user.id;
+    // console.log("Authenticated user:", userId);
+
+    // 1. Get list of completed course IDs
+    const completedRes = await pool.query(
+      `SELECT course_id FROM user_courses WHERE user_id = $1`,
+      [userId]
+    );
+    const completed = completedRes.rows.map((r) => r.course_id);
+    const completedSet = new Set(completed);
+    // console.log("✅ User completed course IDs:", Array.from(completedSet));
+
+    // 2. Get all courses + their prerequisite groups and members
+    const prereqRes = await pool.query(`
+      SELECT 
+        c.id AS course_id, c.code, c.name, c.track,
+        pg.id AS group_id,
+        pgm.prerequisite_id,
+        cp.code AS prerequisite_code,
+        cp.name AS prerequisite_name
+      FROM courses c
+      LEFT JOIN prereq_groups pg ON c.id = pg.course_id
+      LEFT JOIN prereq_group_members pgm ON pg.id = pgm.group_id
+      LEFT JOIN courses cp ON pgm.prerequisite_id = cp.id
+      ORDER BY c.id, pg.id
+    `);
+
+    // console.log("✅ Raw prerequisite data:", prereqRes.rows);
+
+    // 3. Restructure into usable format
+    const courseMap = {}; // course_id → course data w/ prereqs
+
+    for (const row of prereqRes.rows) {
+      const {
+        course_id,
+        code,
+        name,
+        track,
+        group_id,
+        prerequisite_id,
+        prerequisite_code,
+        prerequisite_name,
+      } = row;
+
+      if (!courseMap[course_id]) {
+        courseMap[course_id] = {
+          id: course_id,
+          code,
+          name,
+          track,
+          prereq_groups: [], // Will be array of arrays
+        };
+      }
+
+      // If there's a prerequisite group
+      if (group_id) {
+        // Find existing group or create new one
+        let existingGroup = courseMap[course_id].prereq_groups.find(
+          (g) => g.group_id === group_id
+        );
+
+        if (!existingGroup) {
+          existingGroup = {
+            group_id: group_id,
+            prerequisites: [],
+          };
+          courseMap[course_id].prereq_groups.push(existingGroup);
+        }
+
+        // Add prerequisite to this group if it exists
+        if (prerequisite_id) {
+          existingGroup.prerequisites.push({
+            id: prerequisite_id,
+            code: prerequisite_code,
+            name: prerequisite_name,
+          });
+        }
+      }
+    }
+
+    // console.log("✅ Structured course map:", JSON.stringify(courseMap, null, 2));
+
+    // 4. Determine eligibility
+    const eligible = [];
+
+    for (const courseId in courseMap) {
+      const course = courseMap[courseId];
+      const courseIdNum = parseInt(courseId);
+
+      // Skip if already completed
+      if (completedSet.has(courseIdNum)) {
+        // console.log(`⏭️ Skipping ${course.code} - already completed`);
+        continue;
+      }
+
+      // Check eligibility
+      let isEligible = false;
+
+      // If no prerequisite groups, course is eligible by default
+      if (course.prereq_groups.length === 0) {
+        // console.log(`✅ ${course.code} is eligible - no prerequisites`);
+        isEligible = true;
+      } else {
+        // Check if ANY prerequisite group is satisfied
+        for (const group of course.prereq_groups) {
+          const groupSatisfied = group.prerequisites.every((prereq) => {
+            const hasPrereq = completedSet.has(prereq.id);
+            // console.log(`  Checking prereq ${prereq.code} (ID: ${prereq.id}): ${hasPrereq ? 'COMPLETED' : 'NOT COMPLETED'}`);
+            return hasPrereq;
+          });
+
+          // console.log(`  Group ${group.group_id} for ${course.code}: ${groupSatisfied ? 'SATISFIED' : 'NOT SATISFIED'}`);
+
+          if (groupSatisfied) {
+            isEligible = true;
+            break;
+          }
+        }
+      }
+
+      // console.log(`📊 ${course.code} eligibility: ${isEligible}`);
+
+      if (isEligible) {
+        // Format prereq_groups for frontend consumption (array of arrays)
+        const formattedPrereqGroups = course.prereq_groups.map((group) =>
+          group.prerequisites.map((prereq) => ({
+            id: prereq.id,
+            code: prereq.code,
+            name: prereq.name,
+          }))
+        );
+
+        eligible.push({
+          id: course.id,
+          code: course.code,
+          name: course.name,
+          track: course.track,
+          prereq_groups: formattedPrereqGroups,
+        });
+      }
+    }
+
+    // console.log("✅ Final eligible courses:", eligible);
+    res.json(eligible);
+  } catch (err) {
+    // console.error("❌ Error fetching eligible courses:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
@@ -963,21 +1428,28 @@ app.post("/api/completed-courses", authenticateToken, async (req, res) => {
  * Delete a completed course for a user
  */
 app.delete(
-  "/api/completed-courses/:className",
+  "/api/completed-courses/:id",
   authenticateToken,
   async (req, res) => {
     const user_id = req.user.id;
-    const { className } = req.params;
+    const { id } = req.params;
+    console.log("the course Id I'm trying to delete:", id);
     // This assumes that you can only take a class once a year
     try {
+      const classNameResponse = await pool.query(
+        `SELECT name FROM courses WHERE id = $1`,
+        [id]
+      );
+      const className = classNameResponse.rows[0].name;
       const query = `
-      DELETE FROM completed_courses WHERE user_id = $1 AND class_name = $2
+      DELETE FROM user_courses WHERE user_id = $1 AND course_id = $2
     `;
       await pool.query("BEGIN");
-      const result = await pool.query(query, [user_id, className]);
+      const result = await pool.query(query, [user_id, id]);
       await pool.query("COMMIT");
       res.json({ class_name: className });
     } catch (err) {
+      console.error("error when deleting:", err);
       res.status(500).json({ error: err });
     }
   }
@@ -988,23 +1460,30 @@ app.delete(
  *
  * Retrieve all completed courses for a user
  */
-app.get(
-  "/api/completed-courses",
-  authenticateToken,
-  cache(300),
-  async (req, res) => {
-    const user_id = req.user.id;
-    try {
-      const query = `
-      SELECT * FROM completed_courses WHERE user_id = $1
+app.get("/api/completed-courses", authenticateToken, async (req, res) => {
+  const user_id = req.user.id;
+  try {
+    const query = `
+      SELECT * FROM user_courses WHERE user_id = $1
     `;
-      const result = await pool.query(query, [user_id]);
-      res.json(result.rows);
-    } catch (err) {
-      res.status(500).json({ error: err });
+    const result = await pool.query(query, [user_id]);
+    const ans = [];
+    for (const course of result.rows) {
+      const courseResult = await pool.query(
+        `SELECT name FROM courses WHERE id = $1`,
+        [course.course_id]
+      );
+      ans.push({
+        class_name: courseResult.rows[0].name,
+        id: course.course_id,
+      });
     }
+    // console.log("\n\nresult from getting completed-courses:", ans);
+    res.json(ans);
+  } catch (err) {
+    res.status(500).json({ error: err });
   }
-);
+});
 
 /**
  * ALL GET
@@ -1012,15 +1491,15 @@ app.get(
  * Retrieve all course information for all the courses
  * a user has completed so far
  */
-app.get("/api/prereqs", authenticateToken, cache(300), async (req, res) => {
+app.get("/api/prereqs", authenticateToken, async (req, res) => {
   const user = req.user;
   const user_id = user.id;
   const query = `
     SELECT 
       * 
-    FROM courses JOIN completed_courses ON
-    courses.id = completed_courses.course_id
-    WHERE completed_courses.user_id = $1
+    FROM courses JOIN user_courses ON
+    courses.id = user_courses.course_id
+    WHERE user_courses.user_id = $1
   `;
   try {
     const response = await pool.query(query, [user_id]);

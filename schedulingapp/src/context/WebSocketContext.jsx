@@ -12,8 +12,8 @@ export const WebSocketProvider = ({ children }) => {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsHost =
       process.env.NODE_ENV === "production"
-        ? "scheduling-app-backend-k9zg.onrender.com"
-        : "localhost:4000";
+        ? "http://scheduling-app-alb-177610882.us-east-1.elb.amazonaws.com"
+        : "localhost:8080";
     const wsUrl = `${wsProtocol}//${wsHost}`;
 
     const ws = new WebSocket(wsUrl);

@@ -1,6 +1,8 @@
 import { Box, Typography, Button, Paper } from "@mui/material";
 import GoogleIcon from "@mui/icons-material/Google";
 import { keyframes } from "@mui/system";
+import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from 'react';
 
 const subtleGlow = keyframes`
   0%, 100% { opacity: 0.9; }
@@ -19,6 +21,24 @@ const LoginPage = () => {
   const handleLogin = () => {
     window.location.href = `${backendUrl}/auth/google`;
   };
+
+  const navigate = useNavigate();
+  const [user, setUser] = useState(null); 
+
+  useEffect(() => {
+    fetch(`${backendUrl}/api/me`, { credentials: "include" })
+      .then((res) => {
+        if (!res.ok) throw new Error("Not logged in");
+        return res.json();
+      })
+      .then((data) => {
+        setUser(data.user);
+        navigate("/dashboard"); 
+      })
+      .catch(() => {
+        setUser(null); 
+      });
+  }, [backendUrl, navigate]);
 
   return (
     <Box
@@ -96,7 +116,7 @@ const LoginPage = () => {
             letterSpacing: "-0.025em",
           }}
         >
-          Welcome Back
+          Welcome
         </Typography>
 
         <Typography

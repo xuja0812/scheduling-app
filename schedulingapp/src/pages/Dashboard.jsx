@@ -372,7 +372,6 @@ const Dashboard = () => {
                         fontWeight: 500,
                         color: "#ffffff",
                       }}
-                      secondary={`Created ${new Date().toLocaleDateString()}`}
                       secondaryTypographyProps={{
                         fontFamily:
                           '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
