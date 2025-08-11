@@ -585,8 +585,8 @@ app.get(
     }
 
     res.cookie("token", req.user.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      httpOnly: false,
+      secure: false,
       sameSite: "none",
       maxAge: 15 * 60 * 1000, // 15 minutes,
       domain: undefined
