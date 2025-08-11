@@ -588,7 +588,8 @@ app.get(
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "none",
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      maxAge: 15 * 60 * 1000, // 15 minutes,
+      domain: undefined
     });
 
     res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
