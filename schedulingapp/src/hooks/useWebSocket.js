@@ -10,7 +10,7 @@ export const useWebSocket = (shouldConnect = true) => {
 
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsHost = process.env.NODE_ENV === "production"
-      ? "http://scheduling-app-alb-177610882.us-east-1.elb.amazonaws.com"
+      ? "xuja0812.online"
       : "localhost:8080";
     const wsUrl = `${wsProtocol}//${wsHost}`;
 
