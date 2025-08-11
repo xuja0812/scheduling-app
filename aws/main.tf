@@ -360,7 +360,7 @@ resource "aws_ecs_task_definition" "scheduling_task" {
         },
         {
           name  = "GOOGLE_CALLBACK_URL"
-          value = "http://${aws_lb.scheduling_alb.dns_name}/auth/google/callback"
+          value = "https://xuja0812.online/auth/google/callback"
         }
       ]
       secrets = [
@@ -398,6 +398,30 @@ resource "aws_ecs_task_definition" "scheduling_task" {
       essential = true
     }
   ])
+}
+
+# Request SSL certificate for your domain
+resource "aws_acm_certificate" "ssl_cert" {
+  domain_name       = "xuja0812.online"
+  validation_method = "DNS"
+  
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Add HTTPS listener to ALB
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.scheduling_alb.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  certificate_arn   = aws_acm_certificate.ssl_cert.arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.scheduling_tg.arn
+  }
 }
 
 # ECS Service
