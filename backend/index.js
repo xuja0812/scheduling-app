@@ -192,7 +192,7 @@ const circuitBreaker = {
   cooldown: 30000,
   open: false,
   nextAttempt: 0,
-}
+};
 
 /**
  * Check if Redis is healthy
@@ -200,7 +200,7 @@ const circuitBreaker = {
 function canUseRedis() {
   if (!circuitBreaker.open) return true;
   if (Date.now() > circuitBreaker.nextAttempt) {
-    circuitBreaker.open = false; 
+    circuitBreaker.open = false;
     circuitBreaker.failures = 0;
     return true;
   }
@@ -217,7 +217,7 @@ async function safePublish(channel, message) {
   }
   try {
     await safePublish(channel, message);
-    circuitBreaker.failures = 0; 
+    circuitBreaker.failures = 0;
   } catch (err) {
     handleRedisFailure(err);
   }
@@ -275,7 +275,12 @@ const subRedis = new Redis({
 });
 
 // Subscribe to channels
-subRedis.subscribe("chat-message", "plans-update", "comments-update", "presence-update");
+subRedis.subscribe(
+  "chat-message",
+  "plans-update",
+  "comments-update",
+  "presence-update"
+);
 
 const presenceCounts = {};
 
@@ -298,11 +303,11 @@ subRedis.on("message", (channel, message) => {
 
 subRedis.on("error", (err) => {
   handleRedisFailure(err);
-})
+});
 
 pubRedis.on("error", (err) => {
   handleRedisFailure(err);
-})
+});
 
 wss.on("connection", (ws, req) => {
   metrics.websocketConnections++;
@@ -375,10 +380,10 @@ wss.on("connection", (ws, req) => {
               data: {
                 type: "presence-update",
                 action: "join",
-                user: { id: ws.userId, name }
+                user: { id: ws.userId, name },
               },
             })
-          )
+          );
 
           ws.send(
             JSON.stringify({
@@ -441,14 +446,17 @@ wss.on("connection", (ws, req) => {
           room.delete(ws);
           if (room.size === 0) rooms.delete(ws.studentId);
         }
-        await safePublish("presence-update", JSON.stringify({
-          studentId: ws.studentId,
-          data: {
-            type: "presence-update",
-            action: "leave",
-            user: { id: ws.userId }
-          }
-        }));
+        await safePublish(
+          "presence-update",
+          JSON.stringify({
+            studentId: ws.studentId,
+            data: {
+              type: "presence-update",
+              action: "leave",
+              user: { id: ws.userId },
+            },
+          })
+        );
       }
     });
   });
@@ -469,8 +477,8 @@ app.get("/api/metrics", (req, res) => {
   });
 });
 
-app.get('/', (req, res) => {
-  res.send('Hello from backend!');
+app.get("/", (req, res) => {
+  res.send("Hello from backend!");
 });
 
 app.get("/admin/dashboard", (req, res) => {
@@ -602,7 +610,13 @@ app.get(
  */
 app.get("/api/logout", (req, res) => {
   logReq(req);
-  res.clearCookie("token");
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: true, 
+    sameSite: "none", 
+    path: "/", 
+  });
+
   console.log("User logged out");
   res.json({ message: "Logged out successfully" });
 });
@@ -638,7 +652,8 @@ app.get(
     } // set userId from route param
     next();
   },
-  (req, res, next) => cache(30, `plans_${req.params.studentId}`)(req, res, next),
+  (req, res, next) =>
+    cache(30, `plans_${req.params.studentId}`)(req, res, next),
   async (req, res) => {
     const result = await pool.query("SELECT * FROM plans WHERE user_id = $1", [
       req.params.studentId,
@@ -695,7 +710,7 @@ app.get("/api/plans/:planId", authenticateToken, async (req, res) => {
 
 /**
  * COUNSELOR POST
- * 
+ *
  * Adds a plan for a student on the counselor's side
  */
 app.post("/api/admin/plans/:studentId", authenticateToken, async (req, res) => {
@@ -856,10 +871,9 @@ app.put(
     const { planId } = req.params;
     const { courses, name } = req.body;
     try {
-      const planResult = await pool.query(
-        "SELECT * FROM plans WHERE id = $1",
-        [planId]
-      );
+      const planResult = await pool.query("SELECT * FROM plans WHERE id = $1", [
+        planId,
+      ]);
       if (planResult.rowCount === 0) {
         return res
           .status(404)
@@ -940,31 +954,36 @@ app.put("/api/plans/:planId/courses", authenticateToken, async (req, res) => {
  *
  * Deletes a plan based on planId for a certain student email
  */
-app.delete("/api/admin/plans/:planId/:studentId", authenticateToken, async (req, res) => {
-  logReq(req);
-  const { planId } = req.params;
+app.delete(
+  "/api/admin/plans/:planId/:studentId",
+  authenticateToken,
+  async (req, res) => {
+    logReq(req);
+    const { planId } = req.params;
 
-  try {
-    const planResult = await pool.query(
-      "SELECT * FROM plans WHERE id = $1",
-      [planId]
-    );
-    if (planResult.rowCount === 0) {
-      return res.status(404).json({ error: "Plan not found or unauthorized" });
+    try {
+      const planResult = await pool.query("SELECT * FROM plans WHERE id = $1", [
+        planId,
+      ]);
+      if (planResult.rowCount === 0) {
+        return res
+          .status(404)
+          .json({ error: "Plan not found or unauthorized" });
+      }
+
+      await pool.query("BEGIN");
+      await pool.query("DELETE FROM comments WHERE plan_id = $1", [planId]);
+      await pool.query("DELETE FROM plan_courses WHERE plan_id = $1", [planId]);
+      await pool.query("DELETE FROM plans WHERE id = $1", [planId]);
+      await pool.query("COMMIT");
+      await redis.del(`plans_${req.params.studentId}`);
+      res.json({ message: "Plan deleted successfully" });
+    } catch (err) {
+      console.error("Error deleting plan:", err.message);
+      res.status(500).json({ error: err });
     }
-
-    await pool.query("BEGIN");
-    await pool.query("DELETE FROM comments WHERE plan_id = $1", [planId]);
-    await pool.query("DELETE FROM plan_courses WHERE plan_id = $1", [planId]);
-    await pool.query("DELETE FROM plans WHERE id = $1", [planId]);
-    await pool.query("COMMIT");
-    await redis.del(`plans_${req.params.studentId}`);
-    res.json({ message: "Plan deleted successfully" });
-  } catch (err) {
-    console.error("Error deleting plan:", err.message);
-    res.status(500).json({ error: err });
   }
-});
+);
 
 /**
  * STUDENT DELETE
@@ -1132,12 +1151,12 @@ app.get(
       GROUP BY class_code
       ORDER BY enrollment_count DESC;
     `;
-      
+
       const result = await pool.query(query);
-      console.log("result from query FUCK:",result);
+      console.log("result from query FUCK:", result);
       res.json(result.rows);
     } catch (err) {
-      console.log("popular classes err:",err);
+      console.log("popular classes err:", err);
       res.status(500).json({ error: err });
     }
   }
@@ -1160,41 +1179,37 @@ app.get(
     `;
 
       const result = await pool.query(query);
-      console.log("result from query:",result.rows);
+      console.log("result from query:", result.rows);
       res.json(result.rows);
     } catch (err) {
-      console.log('error:',err);
+      console.log("error:", err);
       res.status(500).json({ error: err });
     }
   }
 );
 
-app.get(
-  "/api/analytics/no-plans",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const query = `
+app.get("/api/analytics/no-plans", authenticateToken, async (req, res) => {
+  try {
+    const query = `
       SELECT u.name, u.email
       FROM users u 
       LEFT JOIN plans p ON u.id = p.user_id 
       WHERE p.id IS NULL AND u.role = 'student';
     `;
 
-      const result = await pool.query(query);
-      console.log("result from no plans query:",result.rows);
-      res.json(result.rows);
-    } catch (err) {
-      console.log('error:',err);
-      res.status(500).json({ error: err });
-    }
+    const result = await pool.query(query);
+    console.log("result from no plans query:", result.rows);
+    res.json(result.rows);
+  } catch (err) {
+    console.log("error:", err);
+    res.status(500).json({ error: err });
   }
-);
+});
 
-app.get('/health', (req, res) => res.sendStatus(200));
+app.get("/health", (req, res) => res.sendStatus(200));
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server listening on port ${PORT}`);
 });
 
