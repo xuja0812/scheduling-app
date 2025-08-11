@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from "react";
 
 export const useWebSocket = (shouldConnect = true) => {
   const [socket, setSocket] = useState(null);
@@ -9,9 +9,10 @@ export const useWebSocket = (shouldConnect = true) => {
     if (!shouldConnect) return;
 
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsHost = process.env.NODE_ENV === "production"
-      ? "xuja0812.online"
-      : "localhost:8080";
+    const wsHost =
+      process.env.NODE_ENV === "production"
+        ? "xuja0812.online"
+        : "localhost:8080";
     const wsUrl = `${wsProtocol}//${wsHost}`;
 
     const connectWebSocket = () => {
@@ -27,7 +28,7 @@ export const useWebSocket = (shouldConnect = true) => {
         console.log("WebSocket disconnected");
         setSocket(null);
         setIsConnected(false);
-        
+
         if (shouldConnect) {
           reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
         }
@@ -41,10 +42,11 @@ export const useWebSocket = (shouldConnect = true) => {
     connectWebSocket();
 
     return () => {
+      console.log("Cleanup running - about to close WebSocket");
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      setSocket(prev => {
+      setSocket((prev) => {
         if (prev) prev.close();
         return null;
       });
