@@ -269,6 +269,15 @@ export default function FourYearPlanner() {
     };
   }, [socket]);
 
+  useEffect(() => {
+    
+    return () => {
+      if (socket) {
+        socket.close();
+      }
+    };
+  }, []);
+
   const sendMessage = () => {
     if (!socket || !isConnected || !inputMessage.trim()) return;
 
