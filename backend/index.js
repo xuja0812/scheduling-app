@@ -274,6 +274,37 @@ const subRedis = new Redis({
   host: process.env.REDIS_HOST || "127.0.0.1",
 });
 
+const presenceRedis = new Redis({
+  port: 6379,
+  host: process.env.REDIS_HOST || "127.0.0.1",
+});
+
+const addUserToPresence = async (studentId, userId, userName, userType) => {
+  const presenceKey = `presence:${studentId}`;
+  const userObj = {
+    id: userId,
+    name: userName,
+    type: userType,
+    joinedAt: Date.now(),
+  };
+
+  await presenceRedis.hset(presenceKey, userId, JSON.stringify(userObj));
+  await presenceRedis.expire(presenceKey, 3600); // Expire in 1 hour
+
+  return userObj;
+};
+
+const removeUserFromPresence = async (studentId, userId) => {
+  const presenceKey = `presence:${studentId}`;
+  await presenceRedis.hdel(presenceKey, userId);
+};
+
+const getAllUsersInRoom = async (studentId) => {
+  const presenceKey = `presence:${studentId}`;
+  const allUserObjs = await presenceRedis.hgetall(presenceKey);
+  return Object.values(allUserObjs).map((userStr) => JSON.parse(userStr));
+};
+
 // Subscribe to channels
 subRedis.subscribe(
   "chat-message",
@@ -363,11 +394,15 @@ wss.on("connection", (ws, req) => {
           if (!rooms.has(studentId)) rooms.set(studentId, new Set());
           rooms.get(studentId).add(ws);
 
+          await addUserToPresence(studentId, userId);
+
           const result = await pool.query(
             "SELECT name FROM users WHERE id = $1",
             [ws.userId]
           );
           const name = result.rows[0]?.name || "Unknown";
+          await addUserToPresence(studentId, userId, name, userType);
+          const allUsers = await getAllUsersInRoom(studentId);
 
           ws.studentId = studentId;
           ws.userId = userId;
@@ -380,7 +415,7 @@ wss.on("connection", (ws, req) => {
               data: {
                 type: "presence-update",
                 action: "join",
-                user: { id: ws.userId, name },
+                users: allUsers,
               },
             })
           );
@@ -440,28 +475,58 @@ wss.on("connection", (ws, req) => {
     });
 
     ws.on("close", async () => {
-      if (ws.studentId) {
-        const room = rooms.get(ws.studentId);
-        if (room) {
-          room.delete(ws);
-          if (room.size === 0) rooms.delete(ws.studentId);
-        }
-        await safePublish(
-          "presence-update",
-          JSON.stringify({
-            studentId: ws.studentId,
-            data: {
-              type: "presence-update",
-              action: "leave",
-              user: { id: ws.userId },
-            },
-          })
-        );
-      }
+      await handleUserDisconnect(ws);
+    });
+
+    ws.on("error", async (error) => {
+      console.error("WebSocket error:", error);
+      await handleUserDisconnect(ws);
     });
   });
 });
 module.exports = { app, pool };
+
+const handleUserDisconnect = async (ws) => {
+  if (ws.studentId && ws.userId) {
+    try {
+      // Remove from Redis presence
+      await removeUserFromPresence(ws.studentId, ws.userId);
+
+      // Remove from local room
+      if (rooms.has(ws.studentId)) {
+        rooms.get(ws.studentId).delete(ws);
+        if (rooms.get(ws.studentId).size === 0) {
+          rooms.delete(ws.studentId);
+        }
+      }
+
+      // Get updated user list and broadcast
+      const remainingUsers = await getAllUsersInRoom(ws.studentId);
+
+      await safePublish(
+        "presence-update",
+        JSON.stringify({
+          studentId: ws.studentId,
+          data: {
+            type: "presence-update",
+            action: "sync",
+            users: remainingUsers,
+          },
+        })
+      );
+
+      console.log(
+        `${ws.userName} (${ws.userId}) left room for student ${ws.studentId}`
+      );
+      console.log(
+        `Room now has ${remainingUsers.length} users:`,
+        remainingUsers.map((u) => u.name)
+      );
+    } catch (error) {
+      console.error("Error handling disconnect:", error);
+    }
+  }
+};
 
 /**
  * ALL GET
@@ -612,9 +677,9 @@ app.get("/api/logout", (req, res) => {
   logReq(req);
   res.clearCookie("token", {
     httpOnly: true,
-    secure: true, 
-    sameSite: "none", 
-    path: "/", 
+    secure: true,
+    sameSite: "none",
+    path: "/",
   });
 
   console.log("User logged out");

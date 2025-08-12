@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Button,
@@ -124,6 +124,19 @@ export default function FourYearPlanner() {
   const [courses, setCourses] = useState({});
   const [viewers, setViewers] = useState([]);
 
+  // WebSocket conflict resolution
+  const [lastSavedPlans, setLastSavedPlans] = useState(plans);
+  const [pendingUpdates, setPendingUpdates] = useState(new Map()); // planId -> update data
+
+  const activeHasUnsavedChanges = useMemo(() => {
+    if (plans.length === 0 || activePlanIndex >= plans.length) return false;
+
+    const currentPlan = plans[activePlanIndex];
+    const savedPlan = lastSavedPlans[activePlanIndex];
+
+    return JSON.stringify(currentPlan) !== JSON.stringify(savedPlan);
+  }, [plans, lastSavedPlans, activePlanIndex]);
+
   const backendUrl =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
@@ -214,8 +227,34 @@ export default function FourYearPlanner() {
             if (data.sender !== username) {
               console.log("activePlanIndex:", activePlanIndex);
               console.log("actual length:", data.plans.length);
-              setActivePlanIndex((prev) => data.plans.length - 1);
+              // setActivePlanIndex((prev) => data.plans.length - 1);
               setPlans(data.plans);
+              // const { planIndex, planData, updatedBy } = data;
+
+              // if (planIndex === activePlanIndex && activeHasUnsavedChanges) {
+              //   // Active plan + unsaved changes = queue the update
+              //   setPendingUpdates((prev) =>
+              //     new Map(prev).set(planIndex, { planData, updatedBy })
+              //   );
+
+              //   // Show notification for active plan only
+              //   showUpdateNotification(updatedBy, planData.name);
+              // } else {
+              //   // Safe to update immediately:
+              //   // - It's a background plan (user can't see it), OR
+              //   // - It's the active plan but user has no unsaved changes
+              //   setPlans((prevPlans) => {
+              //     const newPlans = [...prevPlans];
+              //     newPlans[planIndex] = planData;
+              //     return newPlans;
+              //   });
+
+              //   setLastSavedPlans((prevSaved) => {
+              //     const newSaved = [...prevSaved];
+              //     newSaved[planIndex] = planData;
+              //     return newSaved;
+              //   });
+              // }
             }
             break;
           case "comments-update":
@@ -225,18 +264,7 @@ export default function FourYearPlanner() {
             break;
           case "presence-update":
             console.log("data:", data);
-            setViewers((prev) => {
-              if (data.action === "join") {
-                return [
-                  ...prev.filter((u) => u.id !== data.user.id),
-                  data.user,
-                ];
-              }
-              if (data.action === "leave") {
-                return prev.filter((u) => u.id !== data.user.id);
-              }
-              return prev;
-            });
+            setViewers(data.users || []);
             break;
           default:
             setMessages((prev) => [
@@ -270,7 +298,6 @@ export default function FourYearPlanner() {
   }, [socket]);
 
   useEffect(() => {
-    
     return () => {
       if (socket) {
         socket.close();
@@ -557,26 +584,47 @@ export default function FourYearPlanner() {
     [plans, activePlanIndex]
   );
 
-  const handleAddPlan = React.useCallback(() => {
-    setPlans((prev) => {
-      const newPlans = [
-        ...prev,
-        {
-          name: "",
-          years: {
-            "9th Grade": [],
-            "10th Grade": [],
-            "11th Grade": [],
-            "12th Grade": [],
-          },
+  const handleAddPlan = React.useCallback(async () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const counselorMode = urlParams.get("counselorMode") === "true";
+    const studentId = urlParams.get("studentId");
+    const endpoint = counselorMode ? "admin/" : "";
+    const end = counselorMode ? `/${studentId}` : "";
+
+    try {
+      const response = await fetch(`${backendUrl}/api/${endpoint}plans${end}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "", courses: [] }),
+      });
+
+      const { planId } = await response.json();
+
+      const newPlan = {
+        id: planId,
+        name: "",
+        years: {
+          "9th Grade": [],
+          "10th Grade": [],
+          "11th Grade": [],
+          "12th Grade": [],
         },
-      ];
-      console.log("plans:", newPlans);
-      sendPlansUpdate(newPlans);
-      setActivePlanIndex(newPlans.length - 1);
-      return newPlans;
-    });
-  }, [plans]);
+      };
+
+      setPlans((prev) => {
+        const updatedPlans = [...prev, newPlan];
+        sendPlansUpdate(updatedPlans);
+        return updatedPlans;
+      });
+
+      // setActivePlanIndex((prev) => prev + 1);
+      // alert("Plan created successfully");
+    } catch (error) {
+      console.error("Failed to create plan:", error);
+      alert("Failed to create plan. Please try again.");
+    }
+  }, []);
 
   const renderComments = () => {
     const planId = plans[activePlanIndex]?.id;
