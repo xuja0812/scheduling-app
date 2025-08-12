@@ -332,6 +332,7 @@ export default function FourYearPlanner() {
 
   const sendPlansUpdate = (updatedPlans) => {
     if (!socket || !isConnected) return;
+    console.log("sending message: ",updatedPlans);
     const messageData = {
       type: "plans-update",
       plans: updatedPlans,
