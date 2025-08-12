@@ -681,11 +681,7 @@ app.get(
       );
     }
 
-    // Instead of setting a cookie, send the token in JSON
-    res.json({
-      token: req.user.token,
-      redirectUrl: `${process.env.FRONTEND_URL}/dashboard`,
-    });
+    res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
   }
 );
 
