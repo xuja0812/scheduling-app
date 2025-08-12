@@ -330,16 +330,17 @@ export default function FourYearPlanner() {
     setInputMessage("");
   };
 
-  const sendPlansUpdate = (updatedPlans) => {
+  const sendPlansUpdate = React.useCallback((updatedPlans) => {
+    console.log("sending message: ", updatedPlans);
     if (!socket || !isConnected) return;
-    console.log("sending message: ",updatedPlans);
+    console.log("sending message2: ", updatedPlans);
     const messageData = {
       type: "plans-update",
       plans: updatedPlans,
       sender: username,
     };
     socket.send(JSON.stringify(messageData));
-  };
+  }, [socket, isConnected, username]);
 
   const sendCommentsUpdate = (updatedComments) => {
     if (!socket || !isConnected) return;
@@ -591,7 +592,7 @@ export default function FourYearPlanner() {
     const studentId = urlParams.get("studentId");
     const endpoint = counselorMode ? "admin/" : "";
     const end = counselorMode ? `/${studentId}` : "";
-
+  
     try {
       const response = await fetch(`${backendUrl}/api/${endpoint}plans${end}`, {
         method: "POST",
@@ -599,9 +600,9 @@ export default function FourYearPlanner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "", courses: [] }),
       });
-
+  
       const { planId } = await response.json();
-
+  
       const newPlan = {
         id: planId,
         name: "",
@@ -612,20 +613,18 @@ export default function FourYearPlanner() {
           "12th Grade": [],
         },
       };
-
-      setPlans((prev) => {
-        const updatedPlans = [...prev, newPlan];
+  
+      setPlans((prevPlans) => {
+        const updatedPlans = [...prevPlans, newPlan];
         sendPlansUpdate(updatedPlans);
         return updatedPlans;
       });
-
-      // setActivePlanIndex((prev) => prev + 1);
-      // alert("Plan created successfully");
+  
     } catch (error) {
       console.error("Failed to create plan:", error);
       alert("Failed to create plan. Please try again.");
     }
-  }, []);
+  }, [sendPlansUpdate]);
 
   const renderComments = () => {
     const planId = plans[activePlanIndex]?.id;
