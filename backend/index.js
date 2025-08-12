@@ -94,21 +94,21 @@ function logReq(req) {
  * JWT middleware
  */
 const authenticateToken = (req, res, next) => {
-  // const authHeader = req.headers["authorization"];
-  // const token = (authHeader && authHeader.split(" ")[1]) || req.cookies?.token;
+  const authHeader = req.headers["authorization"];
+  const token = (authHeader && authHeader.split(" ")[1]) || req.cookies?.token;
 
-  // if (!token) {
-  //   return res.status(401).json({ error: "Access token required" });
-  // }
+  if (!token) {
+    return res.status(401).json({ error: "Access token required" });
+  }
 
-  // jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-  //   if (err) {
-  //     return res.status(403).json({ error: "Invalid or expired token" });
-  //   }
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: "Invalid or expired token" });
+    }
 
-  //   req.user = user;
+    req.user = user;
     next();
-  // });
+  });
 };
 
 /**
@@ -644,6 +644,30 @@ app.get(
  *
  * Auth callback
  */
+// app.get(
+//   "/auth/google/callback",
+//   passport.authenticate("google", {
+//     failureRedirect: `${process.env.FRONTEND_URL}/login`,
+//     session: false,
+//   }),
+//   (req, res) => {
+//     if (!req.user?.token) {
+//       return res.redirect(
+//         `${process.env.FRONTEND_URL}/login?error=auth_failed`
+//       );
+//     }
+
+//     res.cookie("token", req.user.token, {
+//       httpOnly: true,
+//       secure: true,
+//       sameSite: "none",
+//       maxAge: 15 * 60 * 1000, // 15 minutes
+//     });
+
+//     res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+//   }
+// );
+
 app.get(
   "/auth/google/callback",
   passport.authenticate("google", {
@@ -657,14 +681,11 @@ app.get(
       );
     }
 
-    res.cookie("token", req.user.token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      maxAge: 15 * 60 * 1000, // 15 minutes
+    // Instead of setting a cookie, send the token in JSON
+    res.json({
+      token: req.user.token,
+      redirectUrl: `${process.env.FRONTEND_URL}/dashboard`,
     });
-
-    res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
   }
 );
 
