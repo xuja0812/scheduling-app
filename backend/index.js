@@ -644,30 +644,6 @@ app.get(
  *
  * Auth callback
  */
-// app.get(
-//   "/auth/google/callback",
-//   passport.authenticate("google", {
-//     failureRedirect: `${process.env.FRONTEND_URL}/login`,
-//     session: false,
-//   }),
-//   (req, res) => {
-//     if (!req.user?.token) {
-//       return res.redirect(
-//         `${process.env.FRONTEND_URL}/login?error=auth_failed`
-//       );
-//     }
-
-//     res.cookie("token", req.user.token, {
-//       httpOnly: true,
-//       secure: true,
-//       sameSite: "none",
-//       maxAge: 15 * 60 * 1000, // 15 minutes
-//     });
-
-//     res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
-//   }
-// );
-
 app.get(
   "/auth/google/callback",
   passport.authenticate("google", {
@@ -681,9 +657,18 @@ app.get(
       );
     }
 
+    res.cookie("token", req.user.token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 15 * 60 * 1000, // 15 minutes
+    });
+
     res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
   }
 );
+
+
 
 /**
  * ALL GET
