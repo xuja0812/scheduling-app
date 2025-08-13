@@ -1,5 +1,3 @@
-process.setMaxListeners(0);
-
 const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
@@ -18,6 +16,8 @@ require("dotenv").config();
 const app = express();
 const port = 4000;
 
+// ------------------ COR Config ------------------ //
+
 /**
  * CORS configuration
  */
@@ -33,6 +33,8 @@ app.use(
     credentials: true,
   })
 );
+
+// ------------------ Rate Limiting Config ------------------ //
 
 /**
  * Rate limiting setup
@@ -55,6 +57,8 @@ const authLimiter = rateLimit({
 
 app.use("/auth/", authLimiter);
 
+// ------------------ Express App Config  ------------------ //
+
 /**
  * Express app setup
  */
@@ -63,32 +67,20 @@ app.use(cookieParser());
 app.set("trust proxy", 1);
 app.use(passport.initialize());
 
-/**
- * Redis configuration
- */
-const redis = new Redis({
-  port: 6379,
-  host: process.env.REDIS_HOST || "127.0.0.1",
-});
-
-redis.on("connect", () => {
-  console.log("Connected to Redis");
-});
-
-redis.on("error", (err) => {
-  console.error("Redis error: " + err);
-});
+// ------------------ DEBUG: Logging ------------------ //
 
 /**
  * Standardized logging structure
  */
 function logReq(req) {
-  // console.log(
-  //   `Request: ${req.method} ${req.originalUrl} - User: ${
-  //     req.user ? req.user.email : "Not authenticated"
-  //   }`
-  // );
+  console.log(
+    `Request: ${req.method} ${req.originalUrl} - User: ${
+      req.user ? req.user.email : "Not authenticated"
+    }`
+  );
 }
+
+// ------------------ JWT Config ------------------ //
 
 /**
  * JWT middleware
@@ -111,6 +103,11 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+/**
+ * ALL POST
+ * 
+ * Token refresh endpoint
+ */
 app.post("/auth/refresh", (req, res) => {
   const refreshToken = req.cookies?.refreshToken;
   if (!refreshToken) {
@@ -141,31 +138,7 @@ app.post("/auth/refresh", (req, res) => {
   });
 });
 
-/**
- * Redis cache middleware
- */
-const cache = (duration, key) => {
-  return async (req, res, next) => {
-    try {
-      const cached = await redis.get(key);
-      if (cached) {
-        console.log(`Cache hit for key: ${key}`);
-        return res.json(JSON.parse(cached));
-      } else {
-        console.log(`Cache miss for key: ${key}`);
-      }
-      const originalJson = res.json;
-      res.json = function (data) {
-        redis.setex(key, duration, JSON.stringify(data));
-        return originalJson.call(this, data);
-      };
-      next();
-    } catch (err) {
-      console.error("Cache error:", err);
-      next();
-    }
-  };
-};
+// ------------------ Metrics ------------------ //
 
 /**
  * Metrics tracking
@@ -178,6 +151,9 @@ const metrics = {
   responseTime: [],
 };
 
+/**
+ * Response time middleware
+ */
 app.use((req, res, next) => {
   const start = Date.now();
   res.on("finish", () => {
@@ -206,6 +182,66 @@ app.use((err, req, res, next) => {
 });
 
 /**
+ * ALL GET
+ *
+ * Metrics endpoint
+ */
+app.get("/api/metrics", (req, res) => {
+  res.json({
+    ...metrics,
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ------------------ Redis Config (Cache)  ------------------ //
+
+/**
+ * Redis configuration
+ */
+const redis = new Redis({
+  port: 6379,
+  host: process.env.REDIS_HOST || "127.0.0.1",
+});
+
+redis.on("connect", () => {
+  console.log("Connected to Redis");
+});
+
+redis.on("error", (err) => {
+  console.error("Redis error: " + err);
+});
+
+/**
+ * Redis cache middleware
+ */
+const cache = (duration, key) => {
+  return async (req, res, next) => {
+    try {
+      const cached = await redis.get(key);
+      if (cached) {
+        console.log(`Cache hit for key: ${key}`);
+        return res.json(JSON.parse(cached));
+      } else {
+        console.log(`Cache miss for key: ${key}`);
+      }
+      const originalJson = res.json;
+      res.json = function (data) {
+        redis.setex(key, duration, JSON.stringify(data));
+        return originalJson.call(this, data);
+      };
+      next();
+    } catch (err) {
+      console.error("Cache error:", err);
+      next();
+    }
+  };
+};
+
+// ------------------ Redis Config (Pub/Sub)  ------------------ //
+
+/**
  * Creating WebSockets server and connections
  */
 const server = http.createServer(app);
@@ -213,9 +249,26 @@ const wss = new WebSocket.Server({ server });
 const rooms = new Map();
 
 /**
+ * Redis pub/sub configuration with ioredis
+ */
+const pubRedis = new Redis({
+  port: 6379,
+  host: process.env.REDIS_HOST || "127.0.0.1",
+});
+
+const subRedis = new Redis({
+  port: 6379,
+  host: process.env.REDIS_HOST || "127.0.0.1",
+});
+
+const presenceRedis = new Redis({
+  port: 6379,
+  host: process.env.REDIS_HOST || "127.0.0.1",
+});
+
+/**
  * Circuit breaker logic
  */
-
 const circuitBreaker = {
   failures: 0,
   threshold: 5,
@@ -242,32 +295,12 @@ function canUseRedis() {
  */
 async function safePublish(channel, message) {
   if (!canUseRedis()) {
-    console.warn("Circuit open - skipping Redis publish");
-    return;
-  }
-  try {
-    await safePublish(channel, message);
-    circuitBreaker.failures = 0;
-  } catch (err) {
-    handleRedisFailure(err);
-  }
-}
-
-let failures = 0;
-let open = false;
-let nextAttempt = 0;
-const FAILURE_THRESHOLD = 5;
-const COOLDOWN = 30000; // 30 sec
-
-async function safePublish(channel, message) {
-  if (open && Date.now() < nextAttempt) {
     console.log("Circuit open — skipping Redis publish");
     return;
   }
-
   try {
     await pubRedis.publish(channel, message);
-    failures = 0; // reset on success
+    failures = 0; 
     open = false;
   } catch (err) {
     failures++;
@@ -280,6 +313,10 @@ async function safePublish(channel, message) {
   }
 }
 
+/**
+ * Safely handles Redis failure
+ */
+
 function handleRedisFailure(err) {
   circuitBreaker.failures++;
   console.error("Redis error:", err.message);
@@ -290,24 +327,6 @@ function handleRedisFailure(err) {
     circuitBreaker.nextAttempt = Date.now() + circuitBreaker.cooldown;
   }
 }
-
-/**
- * Redis pub/sub configuration with ioredis
- */
-const pubRedis = new Redis({
-  port: 6379,
-  host: process.env.REDIS_HOST || "127.0.0.1",
-});
-
-const subRedis = new Redis({
-  port: 6379,
-  host: process.env.REDIS_HOST || "127.0.0.1",
-});
-
-const presenceRedis = new Redis({
-  port: 6379,
-  host: process.env.REDIS_HOST || "127.0.0.1",
-});
 
 const addUserToPresence = async (studentId, userId, userName, userType) => {
   const presenceKey = `presence:${studentId}`;
@@ -371,9 +390,7 @@ pubRedis.on("error", (err) => {
 });
 
 wss.on("connection", (ws, req) => {
-  // console.log("NEW CONNECTION ESTABLISHED");
   metrics.websocketConnections++;
-
   function getTokenFromCookie(cookieHeader) {
     if (!cookieHeader) return null;
     const cookies = cookieHeader.split(";").map((c) => c.trim());
@@ -383,15 +400,11 @@ wss.on("connection", (ws, req) => {
     }
     return null;
   }
-
-  // Extract token from sec-websocket-protocol or query param
   let token = getTokenFromCookie(req.headers.cookie);
-
   if (!token) {
     ws.close(1008, "Access token required");
     return;
   }
-
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) {
       ws.close(1008, "Invalid or expired token");
@@ -411,23 +424,20 @@ wss.on("connection", (ws, req) => {
       }
 
       const { type, data } = parsed;
-      // console.log("parsed message:",parsed);
-
-      // Just handle your existing message types with minimal changes:
       try {
         if (type === "join-student-room") {
           const { studentId, userId, userType } = data;
-         
+
           rooms.forEach((clients, roomId) => {
             clients.delete(ws);
             if (clients.size === 0) rooms.delete(roomId);
           });
-         
+
           if (!rooms.has(studentId)) rooms.set(studentId, new Set());
           rooms.get(studentId).add(ws);
-         
+
           await addUserToPresence(studentId, userId);
-         
+
           const result = await pool.query(
             "SELECT name FROM users WHERE id = $1",
             [ws.userId]
@@ -435,11 +445,11 @@ wss.on("connection", (ws, req) => {
           const name = result.rows[0]?.name || "Unknown";
           await addUserToPresence(studentId, userId, name, userType);
           const allUsers = await getAllUsersInRoom(studentId);
-         
+
           ws.studentId = studentId;
           ws.userId = userId;
           ws.userType = userType;
-         
+
           await safePublish(
             "presence-update",
             JSON.stringify({
@@ -451,29 +461,14 @@ wss.on("connection", (ws, req) => {
               },
             })
           );
-         
-          const savedUIState = await presenceRedis.get(`ui-state:${studentId}`);
-          if (savedUIState) {
-            await safePublish(
-              "plans-update", 
-              JSON.stringify({
-                studentId: studentId,
-                data: {
-                  type: "plans-update",
-                  plans: JSON.parse(savedUIState),
-                  sender: "system"
-                }
-              })
-            );
-          }
-         
+
           ws.send(
             JSON.stringify({
               type: "room-joined",
               data: { studentId, userType, userId },
             })
           );
-         } else if (type === "chat-message") {
+        } else if (type === "chat-message") {
           await safePublish(
             "chat-message",
             JSON.stringify({
@@ -487,7 +482,10 @@ wss.on("connection", (ws, req) => {
             })
           );
         } else if (type === "plans-update") {
-          await presenceRedis.set(`ui-state:${ws.studentId}`, JSON.stringify(parsed.plans));
+          await presenceRedis.set(
+            `ui-state:${ws.studentId}`,
+            JSON.stringify(parsed.plans)
+          );
           await safePublish(
             "plans-update",
             JSON.stringify({
@@ -514,8 +512,7 @@ wss.on("connection", (ws, req) => {
         } else if (type === "leave-room") {
           await handleUserDisconnect(ws);
           return;
-        }
-        else {
+        } else {
           ws.send(
             JSON.stringify({ info: `Server received unknown type: ${type}` })
           );
@@ -541,20 +538,14 @@ module.exports = { app, pool };
 const handleUserDisconnect = async (ws) => {
   if (ws.studentId && ws.userId) {
     try {
-      // Remove from Redis presence
       await removeUserFromPresence(ws.studentId, ws.userId);
-
-      // Remove from local room
       if (rooms.has(ws.studentId)) {
         rooms.get(ws.studentId).delete(ws);
         if (rooms.get(ws.studentId).size === 0) {
           rooms.delete(ws.studentId);
         }
       }
-
-      // Get updated user list and broadcast
       const remainingUsers = await getAllUsersInRoom(ws.studentId);
-
       await safePublish(
         "presence-update",
         JSON.stringify({
@@ -566,7 +557,6 @@ const handleUserDisconnect = async (ws) => {
           },
         })
       );
-
       console.log(
         `${ws.userName} (${ws.userId}) left room for student ${ws.studentId}`
       );
@@ -579,20 +569,6 @@ const handleUserDisconnect = async (ws) => {
     }
   }
 };
-
-/**
- * ALL GET
- *
- * Metrics endpoint
- */
-app.get("/api/metrics", (req, res) => {
-  res.json({
-    ...metrics,
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    timestamp: new Date().toISOString(),
-  });
-});
 
 app.get("/", (req, res) => {
   res.send("Hello from backend!");

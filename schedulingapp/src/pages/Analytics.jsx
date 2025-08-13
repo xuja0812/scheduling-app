@@ -78,9 +78,6 @@ export default function Analytics() {
       .then(([popularClassesData, plansData, noPlansData, uniqueData]) => {
         setClasses(popularClassesData);
         setUnique(uniqueData);
-        // console.log("unique data:",uniqueData);
-        // console.log("popular classes:", popularClassesData);
-        // Compute stats from popularClassesData
         const totalStudents =
           popularClassesData.length > 0
             ? popularClassesData.reduce(
@@ -97,16 +94,12 @@ export default function Analytics() {
             popularClassesData.reduce((prev, current) =>
               prev.enrollment_count > current.enrollment_count ? prev : current
             )?.class_code || "";
-
-        // console.log("no plans:", noPlansData);
-        // Combine stats with otherStatsData as needed
-        // For example, let's assume otherStatsData has some fields like totalDepartments, averageRating, etc.
         setStats({
           totalStudents,
           totalClasses,
           avgEnrollment,
           popularClass,
-          overloaded: plansData, // spread any other stats from the second API call
+          overloaded: plansData, 
           noPlans: noPlansData,
           uniquePlans: uniqueData
         });
@@ -219,7 +212,6 @@ export default function Analytics() {
           "0 25px 50px -12px rgba(0, 0, 0, 0.4)";
       }}
     >
-      {/* Top border accent */}
       <div
         style={{
           position: "absolute",
@@ -341,7 +333,6 @@ export default function Analytics() {
           padding: "2rem",
         }}
       >
-        {/* Chart Card - now matches the styling of other cards */}
         {(loading || classes.length > 0) && (
           <Box
             component={Paper}
@@ -434,7 +425,6 @@ export default function Analytics() {
             )}
           </Box>
         )}
-        {/* Chart Card - now matches the styling of other cards */}
         {(loading || classes.length > 0) && (
           <Box
             component={Paper}
@@ -527,8 +517,6 @@ export default function Analytics() {
             )}
           </Box>
         )}
-
-        {/* Students with Overloaded Schedules */}
         <Box
           component={Paper}
           elevation={0}
@@ -608,8 +596,6 @@ export default function Analytics() {
             </List>
           )}
         </Box>
-
-        {/* Students with No Schedules */}
         <Box
           component={Paper}
           elevation={0}

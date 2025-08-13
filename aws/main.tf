@@ -307,35 +307,6 @@ resource "aws_ecs_task_definition" "scheduling_task" {
   task_role_arn            = aws_iam_role.ecs_task_role.arn
 
   container_definitions = jsonencode([
-    # {
-    #   name  = "nginx"
-    #   image = "777786711870.dkr.ecr.us-east-1.amazonaws.com/nginx:latest"
-
-    #   portMappings = [
-    #     {
-    #       containerPort = 80
-    #       protocol      = "tcp"
-    #     }
-    #   ]
-
-    #   dependsOn = [
-    #     {
-    #       containerName = "backend"
-    #       condition     = "START"
-    #     }
-    #   ]
-
-    #   logConfiguration = {
-    #     logDriver = "awslogs"
-    #     options = {
-    #       awslogs-group         = aws_cloudwatch_log_group.ecs_logs.name
-    #       awslogs-region        = var.aws_region
-    #       awslogs-stream-prefix = "nginx"
-    #     }
-    #   }
-
-    #   essential = true
-    # },
     {
       name  = "backend"
       image = "777786711870.dkr.ecr.us-east-1.amazonaws.com/backend:latest"
@@ -425,7 +396,6 @@ resource "aws_lb_listener" "https" {
 }
 
 # ECS Service
-# ECS Service
 resource "aws_ecs_service" "scheduling_service" {
   name            = "scheduling-app-service"
   cluster         = aws_ecs_cluster.scheduling_cluster.id
@@ -455,6 +425,7 @@ resource "aws_ecs_service" "scheduling_service" {
     Name = "scheduling-app-service"
   }
 }
+
 # ECR Repositories
 resource "aws_ecr_repository" "backend" {
   name = "scheduling-backend"

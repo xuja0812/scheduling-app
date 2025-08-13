@@ -101,7 +101,6 @@ export default function AdminViewAllPlans() {
     if (!acc[plan.studentEmail]) {
       acc[plan.studentEmail] = [];
     }
-    // console.log("plan format:",plan);
     acc[plan.studentEmail].push(plan);
     return acc;
   }, {});

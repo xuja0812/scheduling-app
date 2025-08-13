@@ -86,35 +86,7 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
-    // // --- Test query BEFORE index ---
-    // console.log("\n=== BEFORE INDEX ===");
-    // console.time("Query time before index");
-    // await client.query(`SELECT * FROM plans WHERE user_id = 1 LIMIT 10`);
-    // console.timeEnd("Query time before index");
-
-    // console.log("EXPLAIN ANALYZE output before index:");
-    // let res = await client.query(
-    //   `EXPLAIN ANALYZE SELECT * FROM plans WHERE user_id = 1 LIMIT 10`
-    // );
-    // console.log(res.rows.map((r) => r["QUERY PLAN"]).join("\n"));
-
-    // Create index
-    // console.log("\nCreating index on plans.user_id...");
     await client.query(`CREATE INDEX idx_plans_user_id ON plans(user_id)`);
-
-    // --- Test query AFTER index ---
-    // console.log("\n=== AFTER INDEX ===");
-    // console.time("Query time after index");
-    // await client.query(`SELECT * FROM plans WHERE user_id = 1 LIMIT 10`);
-    // console.timeEnd("Query time after index");
-
-    // console.log("EXPLAIN ANALYZE output after index:");
-    // res = await client.query(
-    //   `EXPLAIN ANALYZE SELECT * FROM plans WHERE user_id = 1 LIMIT 10`
-    // );
-    // console.log(res.rows.map((r) => r["QUERY PLAN"]).join("\n"));
-
     await client.query("COMMIT");
     console.log("\nDatabase initialized successfully.");
   } catch (err) {
@@ -228,14 +200,12 @@ async function migration() {
       ["EN200001", "American Literature", "English", 1.0, "English", "Designed to give the student an introduction to important American authors as well as American authors of choice, this course exposes students to poetry, short stories, and novels. Students will engage in dialogue, write analytically, and conduct short, focused research.", false],
     ];
 
-    const courseIdMap = {}; // Map course code → ID
+    const courseIdMap = {}; // Map course code -> ID
 
     for (const [code, name, track, credits, category, description, required] of courses) {
-      console.log("category:", category);
       const res = await client.query(
         `INSERT INTO courses (code, name, track, credits, category, description, required_for_grad)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (code) DO NOTHING
          RETURNING id`,
         [code, name, track, credits, category, description, required]
       );
@@ -282,22 +252,25 @@ async function migration() {
       [groupBId, courseIdMap["CS580020"]]
     );
 
+    // Setup prerequisite groups for MA400021 (AP Calculus AB)
+    // Path A: MA305001 (Intro to Statistics)
+
     const calcGroup = await client.query(
       `
       INSERT INTO prereq_groups (course_id)
       VALUES ($1) RETURNING id
     `,
-      [courseIdMap["MA400021"]] // AP Calculus AB
+      [courseIdMap["MA400021"]] 
     );
     const calcGroupId = calcGroup.rows[0].id;
 
-    // Add "Intro to Statistics" as the only member of that group
+    // Add "Intro to Statistics" as the only member of the group
     await client.query(
       `
       INSERT INTO prereq_group_members (group_id, prerequisite_id)
       VALUES ($1, $2)
     `,
-      [calcGroupId, courseIdMap["MA305001"]] // Intro to Statistics
+      [calcGroupId, courseIdMap["MA305001"]] 
     );
 
     await client.query("COMMIT");

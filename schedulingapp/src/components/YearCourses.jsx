@@ -23,7 +23,7 @@ const YearCourses = React.memo(({ year, courses, handleCourseRemove }) => (
     ) : (
       courses.map((course, idx) => (
         <Box
-          key={course.id || idx} // better if course has unique id
+          key={course.id || idx} 
           sx={{
             display: "flex",
             alignItems: "center",

@@ -77,7 +77,6 @@ export default function Account() {
       });
       if (response.ok) {
         const data = await response.json();
-        // console.log("completed classes:", data);
         setCompletedClasses(data);
         return data;
       } else {
@@ -174,7 +173,6 @@ export default function Account() {
   };
 
   const handleRemoveClass = async (courseId) => {
-    // console.log("course id trying to delete:", courseId);
     try {
       const response = await fetch(
         `${backendUrl}/api/completed-courses/${courseId}`,
@@ -184,7 +182,6 @@ export default function Account() {
         }
       );
       const data = await response.json();
-    //   console.log("deleting data:", data);
       if (response.ok) {
         setCompletedClasses((prev) =>
           prev.filter((cls) => cls.class_name !== data.class_name)
@@ -233,7 +230,6 @@ export default function Account() {
         position: "relative",
       }}
     >
-      {/* Main Course Entry Section */}
       <Paper
         elevation={0}
         sx={{

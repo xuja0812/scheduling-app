@@ -79,23 +79,7 @@ const conflictDetection = (plan) => {
       }
     });
   });
-  // console.log("conflicts:", conflicts);
   return conflicts;
-};
-
-const semesterToGrade = (year, semester) => {
-  const currentYear = 2025;
-  const yearDiff = currentYear - parseInt(year);
-  if (
-    semester.toLowerCase() === "fall" ||
-    semester.toLowerCase() === "spring"
-  ) {
-    if (yearDiff === 0) return "12th Grade";
-    if (yearDiff === 1) return "11th Grade";
-    if (yearDiff === 2) return "10th Grade";
-    if (yearDiff === 3) return "9th Grade";
-  }
-  return "12th Grade";
 };
 
 export default function FourYearPlanner() {
@@ -112,21 +96,14 @@ export default function FourYearPlanner() {
 
   // WebSocket vars
   const { socket, isConnected } = useWebSocket(true);
-
-  const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState("");
   const [username, setUsername] = useState("");
-  const [user, setUser] = useState(null);
 
   // Conflict vars
   const [conflicts, setConflicts] = useState([]);
 
   const [courses, setCourses] = useState({});
   const [viewers, setViewers] = useState([]);
-
-  // WebSocket conflict resolution
-  const [lastSavedPlans, setLastSavedPlans] = useState(plans);
-  const [pendingUpdates, setPendingUpdates] = useState(new Map()); // planId -> update data
 
   const activeHasUnsavedChanges = useMemo(() => {
     if (plans.length === 0 || activePlanIndex >= plans.length) return false;
@@ -164,7 +141,6 @@ export default function FourYearPlanner() {
         return res.json();
       })
       .then((data) => {
-        // console.log("returned from api/classes:", data);
         let cs = new Map();
         for (let course of data) {
           cs.set(course.name, course);
@@ -225,36 +201,7 @@ export default function FourYearPlanner() {
             break;
           case "plans-update":
             if (data.sender !== username) {
-              // console.log("activePlanIndex:", activePlanIndex);
-              // console.log("actual length:", data.plans.length);
-              // setActivePlanIndex((prev) => data.plans.length - 1);
               setPlans(data.plans);
-              // const { planIndex, planData, updatedBy } = data;
-
-              // if (planIndex === activePlanIndex && activeHasUnsavedChanges) {
-              //   // Active plan + unsaved changes = queue the update
-              //   setPendingUpdates((prev) =>
-              //     new Map(prev).set(planIndex, { planData, updatedBy })
-              //   );
-
-              //   // Show notification for active plan only
-              //   showUpdateNotification(updatedBy, planData.name);
-              // } else {
-              //   // Safe to update immediately:
-              //   // - It's a background plan (user can't see it), OR
-              //   // - It's the active plan but user has no unsaved changes
-              //   setPlans((prevPlans) => {
-              //     const newPlans = [...prevPlans];
-              //     newPlans[planIndex] = planData;
-              //     return newPlans;
-              //   });
-
-              //   setLastSavedPlans((prevSaved) => {
-              //     const newSaved = [...prevSaved];
-              //     newSaved[planIndex] = planData;
-              //     return newSaved;
-              //   });
-              // }
             }
             break;
           case "comments-update":
@@ -263,7 +210,6 @@ export default function FourYearPlanner() {
             }
             break;
           case "presence-update":
-            // console.log("data:", data);
             setViewers(data.users || []);
             break;
           default:
@@ -332,14 +278,12 @@ export default function FourYearPlanner() {
 
   const sendPlansUpdate = React.useCallback(
     (updatedPlans) => {
-      // console.log("sending message: ", updatedPlans);
       if (!socket || !isConnected) return;
-      // console.log("sending message2: ", updatedPlans);
       const messageData = {
         type: "plans-update",
         plans: updatedPlans,
         sender: username,
-        shouldPersist: true
+        shouldPersist: true,
       };
       socket.send(JSON.stringify(messageData));
     },
@@ -382,7 +326,6 @@ export default function FourYearPlanner() {
           sendPlansUpdate(plans);
           return;
         }
-        // console.log("plans data:", plansData);
         Promise.all(
           plansData.map((plan) =>
             fetch(`${backendUrl}/api/plans/${plan.id}`, {
@@ -408,7 +351,6 @@ export default function FourYearPlanner() {
           )
         ).then((plansWithCourses) => {
           setPlans(plansWithCourses);
-          // console.log("plans:", plansWithCourses);
           sendPlansUpdate(plansWithCourses);
 
           plansWithCourses.forEach((plan) => {
@@ -439,7 +381,7 @@ export default function FourYearPlanner() {
       .then((res) => res.json())
       .then((data) => {
         setComments((prev) => ({ ...prev, [planId]: data }));
-        sendCommentsUpdate({ ...comments, [planId]: data }); // Send the updated comments
+        sendCommentsUpdate({ ...comments, [planId]: data }); 
       });
   };
 
@@ -454,7 +396,6 @@ export default function FourYearPlanner() {
       body: JSON.stringify({ text: newComment.trim() }),
     })
       .then((res) => {
-        // console.log("new comment:", newComment);
         if (!res.ok) throw new Error("Failed to post comment");
         setNewComment("");
         fetchComments(planId);
@@ -476,7 +417,6 @@ export default function FourYearPlanner() {
   const flattenCourses = (yearsObj) => {
     const cs = [];
     for (const [year, classes] of Object.entries(yearsObj)) {
-      // console.log("classes:", classes);
       classes.forEach((class_code) => {
         const course_id = courses.get(class_code).id;
         cs.push({
@@ -486,15 +426,12 @@ export default function FourYearPlanner() {
         });
       });
     }
-    // console.log("flattened courses:", cs);
     return cs;
   };
 
   const handleSaveCourses = () => {
     const activePlan = plans[activePlanIndex];
     const coursesFlat = flattenCourses(activePlan.years);
-    // console.log("flattened courses in hook:", coursesFlat);
-
     if (!activePlan.id) {
       const urlParams = new URLSearchParams(window.location.search);
       const counselorMode = urlParams.get("counselorMode") === "true";
@@ -604,9 +541,7 @@ export default function FourYearPlanner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "", courses: [] }),
       });
-
       const { planId } = await response.json();
-
       const newPlan = {
         id: planId,
         name: "",
@@ -617,7 +552,6 @@ export default function FourYearPlanner() {
           "12th Grade": [],
         },
       };
-
       setPlans((prevPlans) => {
         const updatedPlans = [...prevPlans, newPlan];
         sendPlansUpdate(updatedPlans);
@@ -782,7 +716,7 @@ export default function FourYearPlanner() {
             margin: "0 0 12px 0",
             fontWeight: 600,
             fontSize: "1.25rem",
-            color: "rgba(59, 130, 246, 0.9)", // subtle blue accent to match gradient
+            color: "rgba(59, 130, 246, 0.9)", 
             textAlign: "center",
             userSelect: "none",
           }}
@@ -807,91 +741,6 @@ export default function FourYearPlanner() {
           ))}
         </ul>
       </Paper>
-
-      {/* <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', marginTop: "50px" }}>
-        <h1>WebSocket Chat Test</h1>
-
-        <div style={{ marginBottom: '20px' }}>
-          <strong>Status:</strong> {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-          <br />
-          <strong>You are:</strong> {username}
-          <br />
-          <strong>Room:</strong> {new URLSearchParams(window.location.search).get('studentId') || 'jasminexu999@gmail.com'}
-        </div>
-
-        <div style={{
-          border: '1px solid #ccc',
-          height: '400px',
-          overflowY: 'scroll',
-          padding: '10px',
-          marginBottom: '10px',
-          backgroundColor: '#f9f9f9',
-          color: 'black'
-        }}>
-          {messages.length === 0 ? (
-            <p style={{ color: '#666' }}>No messages yet. Start typing to test!</p>
-          ) : (
-            messages.map(msg => (
-              <div key={msg.id} style={{ marginBottom: '10px' }}>
-                <strong>{msg.sender}</strong>
-                <span style={{ color: '#666', fontSize: '12px', marginLeft: '10px' }}>
-                  {msg.timestamp}
-                </span>
-                <br />
-                <span>{msg.text}</span>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <input
-            type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type a message..."
-            style={{
-              flex: 1,
-              padding: '10px',
-              border: '1px solid #ccc',
-              borderRadius: '4px'
-            }}
-            disabled={!isConnected}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={!isConnected || !inputMessage.trim()}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: isConnected ? '#007bff' : '#ccc',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: isConnected ? 'pointer' : 'not-allowed'
-            }}
-          >
-            Send
-          </button>
-        </div>
-        <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-          <button onClick={() => {
-            if (socket && isConnected) {
-              socket.send(JSON.stringify({ type: 'test', data: 'Hello from frontend!' }));
-            }
-          }}>
-            Send Test Message
-          </button>
-
-          <button onClick={() => {
-            if (socket && isConnected) {
-              socket.send('Raw string message');
-            }
-          }}>
-            Send Raw String
-          </button>
-        </div>
-      </div> */}
 
       <Paper
         elevation={0}

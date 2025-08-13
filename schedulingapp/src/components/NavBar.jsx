@@ -114,7 +114,6 @@ export default function NavBar() {
             ClassSync
           </Typography>
 
-          {/* Desktop Nav */}
           <Box
             component="nav"
             sx={{
@@ -188,7 +187,6 @@ export default function NavBar() {
             })}
           </Box>
 
-          {/* Mobile Menu Button */}
           <IconButton
             edge="end"
             color="inherit"
@@ -201,7 +199,6 @@ export default function NavBar() {
         </Toolbar>
       </AppBar>
 
-      {/* Mobile Drawer */}
       <Drawer
         anchor="right"
         open={drawerOpen}
@@ -214,8 +211,6 @@ export default function NavBar() {
           },
         }}
       >
-        {/* Push drawer content down to match AppBar height */}
-
         <List sx={{ mt: "100px"}}>
           {navItems.map(({ label, to }) => (
             <ListItem key={to} disablePadding>

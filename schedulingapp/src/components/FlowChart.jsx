@@ -8,7 +8,6 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 
-// Custom node with tooltip and better styles
 const CustomNode = ({ data, style }) => {
   return (
     <div

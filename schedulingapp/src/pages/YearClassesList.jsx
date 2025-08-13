@@ -247,13 +247,10 @@ export default function CourseCatalog() {
         return res.json();
       })
       .then((data) => {
-        // console.log("course catalog result:", data);
-        // Convert credits to numbers
         const processedData = data.map(course => ({
           ...course,
           credits: parseFloat(course.credits)
         }));
-        // console.log("processed data:",processedData);
         setSampleCourses(processedData);
         setTracks([...new Set(data.map((course) => course.track))]);
         setCategories([...new Set(data.map((course) => course.category))]);
@@ -262,21 +259,10 @@ export default function CourseCatalog() {
   }, []);
 
   useEffect(() => {
-    // console.log("sampleCourses changed to length:", sampleCourses.length);
   }, [sampleCourses]);
 
-  // Filter and search courses
   const filteredCourses = useMemo(() => {
-    // console.log("Filtering with:", {
-    //   sampleCourses: sampleCourses.length,
-    //   searchTerm,
-    //   selectedTrack,
-    //   selectedCategory,
-    //   creditRange,
-    //   showRequiredOnly
-    // });
     return sampleCourses.filter((course) => {
-      // console.log("Course credits:", course.credits, "vs range:", creditRange);
       const matchesSearch =
         course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         course.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -305,10 +291,6 @@ export default function CourseCatalog() {
     creditRange,
     showRequiredOnly,
   ]);
-
-  // console.log("filteredCourses length:", filteredCourses.length);
-
-  // Group courses by track
   const coursesByTrack = useMemo(() => {
     const grouped = {};
     filteredCourses.forEach((course) => {
@@ -377,8 +359,6 @@ export default function CourseCatalog() {
         >
           Course Catalog
         </Typography>
-
-        {/* Search and Filters */}
         <Box
           sx={{
             maxWidth: 1200,
@@ -537,8 +517,6 @@ export default function CourseCatalog() {
             </Box>
           </Box>
         </Box>
-
-        {/* Results Summary */}
         <Box sx={{ maxWidth: 1200, mx: "auto", mb: 3 }}>
           <Typography
             variant="body2"
@@ -552,8 +530,6 @@ export default function CourseCatalog() {
             {filteredCourses.length !== 1 ? "s" : ""} found
           </Typography>
         </Box>
-
-        {/* Course List by Track */}
         <Box sx={{ maxWidth: 1200, mx: "auto" }}>
           {Object.entries(coursesByTrack).map(([track, courses]) => (
             <Box key={track} sx={{ mb: 6 }}>

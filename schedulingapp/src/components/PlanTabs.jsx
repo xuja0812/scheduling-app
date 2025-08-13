@@ -24,7 +24,7 @@ const PlanTabs = React.memo(({ plans, activePlanIndex, setActivePlanIndex, handl
     >
       {plans.map((plan, idx) => (
         <Tab
-          key={plan.id || idx} // better if you have IDs
+          key={plan.id || idx} 
           label={plan.name || `Plan ${idx + 1}`}
           sx={{ minWidth: 120 }}
         />
