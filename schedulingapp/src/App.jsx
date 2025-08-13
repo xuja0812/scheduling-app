@@ -5,7 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import FourYearPlanner from "./pages/FourYearPlanner";
 import YearClassesList from "./pages/YearClassesList";
 import Logout from "./pages/LogoutPage";
-import AdminViewAllPlans from "./pages/AdminViewAllPlans";=
+import AdminViewAllPlans from "./pages/AdminViewAllPlans";
 import Analytics from "./pages/Analytics";
 import Account from "./pages/Account";
 
