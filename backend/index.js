@@ -16,7 +16,7 @@ require("dotenv").config();
 const app = express();
 const port = 4000;
 
-// ------------------ COR Config ------------------ //
+// ------------------ CORS Config ------------------ //
 
 /**
  * CORS configuration
@@ -25,6 +25,7 @@ const allowedOrigins = [
   "http://localhost:81",
   "http://frontend:81",
   "https://scheduler-two-rho.vercel.app",
+  "https://app.xuja0812.online",
 ];
 
 app.use(
@@ -105,7 +106,7 @@ const authenticateToken = (req, res, next) => {
 
 /**
  * ALL POST
- * 
+ *
  * Token refresh endpoint
  */
 app.post("/auth/refresh", (req, res) => {
@@ -300,7 +301,7 @@ async function safePublish(channel, message) {
   }
   try {
     await pubRedis.publish(channel, message);
-    failures = 0; 
+    failures = 0;
     open = false;
   } catch (err) {
     failures++;
@@ -316,7 +317,6 @@ async function safePublish(channel, message) {
 /**
  * Safely handles Redis failure
  */
-
 function handleRedisFailure(err) {
   circuitBreaker.failures++;
   console.error("Redis error:", err.message);
@@ -336,10 +336,8 @@ const addUserToPresence = async (studentId, userId, userName, userType) => {
     type: userType,
     joinedAt: Date.now(),
   };
-
   await presenceRedis.hset(presenceKey, userId, JSON.stringify(userObj));
-  await presenceRedis.expire(presenceKey, 3600); // Expire in 1 hour
-
+  await presenceRedis.expire(presenceKey, 3600);
   return userObj;
 };
 
@@ -482,10 +480,8 @@ wss.on("connection", (ws, req) => {
             })
           );
         } else if (type === "plans-update") {
-          await presenceRedis.set(
-            `ui-state:${ws.studentId}`,
-            JSON.stringify(parsed.plans)
-          );
+          const studentKey = `studentPlans:${ws.studentId}`;
+          await presenceRedis.set(studentKey, JSON.stringify(parsed.plans));
           await safePublish(
             "plans-update",
             JSON.stringify({
@@ -512,6 +508,49 @@ wss.on("connection", (ws, req) => {
         } else if (type === "leave-room") {
           await handleUserDisconnect(ws);
           return;
+        } else if (parsed.type === "request-full-plans") {
+          const studentKey = `studentPlans:${parsed.studentId}`;
+          let savedPlans = await presenceRedis.get(studentKey);
+
+          if (!savedPlans) {
+            // DB fetch + flattening (courses grouped by year)
+            const plansData = await pool.query(
+              "SELECT * FROM plans WHERE user_id = $1",
+              [parsed.studentId]
+            );
+
+            const plansWithCourses = await Promise.all(
+              plansData.rows.map(async (plan) => {
+                const courses = await pool.query(
+                  "SELECT * FROM plan_courses WHERE plan_id = $1",
+                  [plan.id]
+                );
+                const yearsGrouped = {
+                  "9th Grade": [],
+                  "10th Grade": [],
+                  "11th Grade": [],
+                  "12th Grade": [],
+                };
+                courses.rows.forEach(({ class_code, year }) => {
+                  if (yearsGrouped[year]) yearsGrouped[year].push(class_code);
+                  else yearsGrouped["9th Grade"].push(class_code);
+                });
+
+                return { ...plan, years: yearsGrouped };
+              })
+            );
+
+            savedPlans = JSON.stringify(plansWithCourses);
+            await presenceRedis.set(studentKey, savedPlans);
+          }
+
+          ws.send(
+            JSON.stringify({
+              type: "plans-update",
+              plans: JSON.parse(savedPlans),
+              sender: "server",
+            })
+          );
         } else {
           ws.send(
             JSON.stringify({ info: `Server received unknown type: ${type}` })
@@ -1342,29 +1381,27 @@ server.listen(PORT, "0.0.0.0", () => {
 });
 
 /**
- * ONGOING: account info for classes students have already taken
- */
-
-/**
  * ALL GET
  *
  * Retrieve all available past classes
  */
-app.get("/api/classes", authenticateToken, async (req, res) => {
-  try {
-    const query = `
-    SELECT 
-        *
-      FROM courses
-    `;
-    const result = await pool.query(query);
-    // console.log("result:",result);
-    res.json(result.rows);
-  } catch (err) {
-    // console.log("err:",err);
-    res.status(500).json({ error: err });
+app.get(
+  "/api/classes",
+  authenticateToken,
+  cache(60, "all_courses"),
+  async (req, res) => {
+    try {
+      const query = `
+        SELECT *
+        FROM courses
+      `;
+      const result = await pool.query(query);
+      res.json(result.rows);
+    } catch (err) {
+      res.status(500).json({ error: err });
+    }
   }
-});
+);
 
 /**
  * ALL POST
@@ -1582,7 +1619,6 @@ app.get("/api/completed-courses", authenticateToken, async (req, res) => {
         id: course.course_id,
       });
     }
-    // console.log("\n\nresult from getting completed-courses:", ans);
     res.json(ans);
   } catch (err) {
     res.status(500).json({ error: err });

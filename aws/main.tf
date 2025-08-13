@@ -323,7 +323,7 @@ resource "aws_ecs_task_definition" "scheduling_task" {
         },
         {
           name  = "FRONTEND_URL"
-          value = "https://scheduler-two-rho.vercel.app"
+          value = "https://app.xuja0812.online"
         },
         {
           name  = "REDIS_HOST"
@@ -374,6 +374,7 @@ resource "aws_ecs_task_definition" "scheduling_task" {
 # Request SSL certificate for your domain
 resource "aws_acm_certificate" "ssl_cert" {
   domain_name       = "xuja0812.online"
+  subject_alternative_names = ["*.xuja0812.online"]
   validation_method = "DNS"
   
   lifecycle {

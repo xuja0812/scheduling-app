@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Button,
@@ -93,6 +93,7 @@ export default function FourYearPlanner() {
   });
   const [comments, setComments] = useState({});
   const [newComment, setNewComment] = useState("");
+  const [messages, setMessages] = useState([]);
 
   // WebSocket vars
   const { socket, isConnected } = useWebSocket(true);
@@ -105,39 +106,18 @@ export default function FourYearPlanner() {
   const [courses, setCourses] = useState({});
   const [viewers, setViewers] = useState([]);
 
-  const activeHasUnsavedChanges = useMemo(() => {
-    if (plans.length === 0 || activePlanIndex >= plans.length) return false;
-
-    const currentPlan = plans[activePlanIndex];
-    const savedPlan = lastSavedPlans[activePlanIndex];
-
-    return JSON.stringify(currentPlan) !== JSON.stringify(savedPlan);
-  }, [plans, lastSavedPlans, activePlanIndex]);
-
-  const backendUrl =
-    import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
-
   const handleConflicts = () => {
     const c = conflictDetection(plans[activePlanIndex]);
     setConflicts(c);
   };
 
-  useEffect(() => {
-    fetch(`${backendUrl}/api/me`, { credentials: "include" })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch user");
-        return res.json();
-      })
-      .then((data) => {
-        setUser(data.user);
-      })
-      .catch(() => setUser(null));
-  }, []);
+  const backendUrl =
+    import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
   useEffect(() => {
     fetch(`${backendUrl}/api/classes`, { credentials: "include" })
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch user");
+        if (!res.ok) throw new Error("Failed to fetch classes");
         return res.json();
       })
       .then((data) => {
@@ -147,7 +127,7 @@ export default function FourYearPlanner() {
         }
         setCourses(cs);
       })
-      .catch(() => setUser(null));
+      .catch(() => console.error("Unable to fetch classes"));
   }, []);
 
   useEffect(() => {
@@ -168,6 +148,13 @@ export default function FourYearPlanner() {
       };
       socket.send(JSON.stringify(roomData));
 
+      socket.send(
+        JSON.stringify({
+          type: "request-full-plans",
+          studentId: studentId,
+        })
+      );
+
       setMessages((prev) => [
         ...prev,
         {
@@ -179,6 +166,8 @@ export default function FourYearPlanner() {
       ]);
     }
   }, [socket, isConnected]);
+
+  const commentsFetchedRef = useRef(false);
 
   useEffect(() => {
     if (!socket) return;
@@ -202,6 +191,26 @@ export default function FourYearPlanner() {
           case "plans-update":
             if (data.sender !== username) {
               setPlans(data.plans);
+            }
+            // Fetch comments only the first time
+            if (!commentsFetchedRef.current) {
+              data.plans.forEach((plan) => {
+                fetch(`${backendUrl}/api/plans/${plan.id}/comments`, {
+                  credentials: "include",
+                })
+                  .then((res) => (res.ok ? res.json() : []))
+                  .then((commentsData) => {
+                    setComments((prev) => ({
+                      ...prev,
+                      [plan.id]: commentsData,
+                    }));
+                    sendCommentsUpdate(commentsData);
+                  })
+                  .catch(() => {
+                    setComments((prev) => ({ ...prev, [plan.id]: [] }));
+                  });
+              });
+              commentsFetchedRef.current = true;
             }
             break;
           case "comments-update":
@@ -276,16 +285,27 @@ export default function FourYearPlanner() {
     setInputMessage("");
   };
 
+  // batching changes
+  const pendingPlans = React.useRef(null);
+  const batchTimeout = React.useRef(null);
   const sendPlansUpdate = React.useCallback(
     (updatedPlans) => {
+      console.log("updated plans:", updatedPlans);
       if (!socket || !isConnected) return;
-      const messageData = {
-        type: "plans-update",
-        plans: updatedPlans,
-        sender: username,
-        shouldPersist: true,
-      };
-      socket.send(JSON.stringify(messageData));
+
+      pendingPlans.current = updatedPlans;
+      if (!batchTimeout.current) {
+        batchTimeout.current = setTimeout(() => {
+          const messageData = {
+            type: "plans-update",
+            plans: pendingPlans.current,
+            sender: username,
+          };
+          socket.send(JSON.stringify(messageData));
+          pendingPlans.current = null;
+          batchTimeout.current = null;
+        }, 50);
+      }
     },
     [socket, isConnected, username]
   );
@@ -306,74 +326,6 @@ export default function FourYearPlanner() {
     }
   };
 
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const counselorMode = urlParams.get("counselorMode") === "true";
-    const studentId = urlParams.get("studentId");
-    const endpoint = counselorMode ? "admin/plans" : "plans";
-    const end = counselorMode ? `/${studentId}` : "";
-
-    fetch(`${backendUrl}/api/${endpoint}${end}`, {
-      credentials: "include",
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch plans");
-        return res.json();
-      })
-      .then((plansData) => {
-        if (plansData.length === 0) {
-          setPlans([]);
-          sendPlansUpdate(plans);
-          return;
-        }
-        Promise.all(
-          plansData.map((plan) =>
-            fetch(`${backendUrl}/api/plans/${plan.id}`, {
-              credentials: "include",
-            })
-              .then((r) => r.json())
-              .then((courses) => {
-                const yearsGrouped = {
-                  "9th Grade": [],
-                  "10th Grade": [],
-                  "11th Grade": [],
-                  "12th Grade": [],
-                };
-                courses.forEach(({ class_code, year }) => {
-                  if (yearsGrouped[year]) {
-                    yearsGrouped[year].push(class_code);
-                  } else {
-                    yearsGrouped["9th Grade"].push(class_code);
-                  }
-                });
-                return { ...plan, years: yearsGrouped };
-              })
-          )
-        ).then((plansWithCourses) => {
-          setPlans(plansWithCourses);
-          sendPlansUpdate(plansWithCourses);
-
-          plansWithCourses.forEach((plan) => {
-            fetch(`${backendUrl}/api/plans/${plan.id}/comments`, {
-              credentials: "include",
-            })
-              .then((res) => {
-                if (!res.ok) throw new Error("Failed to fetch comments");
-                return res.json();
-              })
-              .then((commentsData) => {
-                setComments((prev) => ({ ...prev, [plan.id]: commentsData }));
-                sendCommentsUpdate(comments);
-              })
-              .catch(() => {
-                setComments((prev) => ({ ...prev, [plan.id]: [] }));
-              });
-          });
-        });
-      })
-      .catch(console.error);
-  }, []);
-
   const fetchComments = (planId) => {
     fetch(`${backendUrl}/api/plans/${planId}/comments`, {
       credentials: "include",
@@ -381,7 +333,7 @@ export default function FourYearPlanner() {
       .then((res) => res.json())
       .then((data) => {
         setComments((prev) => ({ ...prev, [planId]: data }));
-        sendCommentsUpdate({ ...comments, [planId]: data }); 
+        sendCommentsUpdate({ ...comments, [planId]: data });
       });
   };
 
@@ -716,7 +668,7 @@ export default function FourYearPlanner() {
             margin: "0 0 12px 0",
             fontWeight: 600,
             fontSize: "1.25rem",
-            color: "rgba(59, 130, 246, 0.9)", 
+            color: "rgba(59, 130, 246, 0.9)",
             textAlign: "center",
             userSelect: "none",
           }}

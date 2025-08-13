@@ -13,7 +13,7 @@ export const useWebSocket = (shouldConnect = true) => {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsHost =
       process.env.NODE_ENV === "production"
-        ? "xuja0812.online"
+        ? "api.xuja0812.online"
         : "localhost:8080";
     const wsUrl = `${wsProtocol}//${wsHost}`;
 
