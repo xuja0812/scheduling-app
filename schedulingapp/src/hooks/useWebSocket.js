@@ -4,6 +4,8 @@ export const useWebSocket = (shouldConnect = true) => {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimeoutRef = useRef(null);
+  const socketRef = useRef(null);
+  const shouldReconnectRef = useRef(true);
 
   useEffect(() => {
     if (!shouldConnect) return;
@@ -21,6 +23,7 @@ export const useWebSocket = (shouldConnect = true) => {
       ws.onopen = () => {
         console.log("WebSocket connected");
         setSocket(ws);
+        socketRef.current = ws;
         setIsConnected(true);
       };
 
@@ -29,7 +32,7 @@ export const useWebSocket = (shouldConnect = true) => {
         setSocket(null);
         setIsConnected(false);
 
-        if (shouldConnect) {
+        if (shouldConnect && shouldReconnectRef.current) {
           reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
         }
       };
@@ -42,14 +45,15 @@ export const useWebSocket = (shouldConnect = true) => {
     connectWebSocket();
 
     return () => {
-      console.log("Cleanup running - about to close WebSocket");
+      shouldReconnectRef.current = false; 
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      setSocket((prev) => {
-        if (prev) prev.close();
-        return null;
-      });
+
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ type: "leave-room" }));
+      }
+      socketRef.current?.close();
     };
   }, [shouldConnect]);
 

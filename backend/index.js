@@ -83,11 +83,11 @@ redis.on("error", (err) => {
  * Standardized logging structure
  */
 function logReq(req) {
-  console.log(
-    `Request: ${req.method} ${req.originalUrl} - User: ${
-      req.user ? req.user.email : "Not authenticated"
-    }`
-  );
+  // console.log(
+  //   `Request: ${req.method} ${req.originalUrl} - User: ${
+  //     req.user ? req.user.email : "Not authenticated"
+  //   }`
+  // );
 }
 
 /**
@@ -110,6 +110,36 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+app.post("/auth/refresh", (req, res) => {
+  const refreshToken = req.cookies?.refreshToken;
+  if (!refreshToken) {
+    return res.status(401).json({ error: "Refresh token required" });
+  }
+
+  jwt.verify(refreshToken, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res
+        .status(403)
+        .json({ error: "Invalid or expired refresh token" });
+    }
+
+    const newAccessToken = jwt.sign(
+      { id: decoded.id },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    res.cookie("token", newAccessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 15 * 60 * 1000,
+    });
+
+    res.json({ success: true });
+  });
+});
 
 /**
  * Redis cache middleware
@@ -341,6 +371,7 @@ pubRedis.on("error", (err) => {
 });
 
 wss.on("connection", (ws, req) => {
+  // console.log("NEW CONNECTION ESTABLISHED");
   metrics.websocketConnections++;
 
   function getTokenFromCookie(cookieHeader) {
@@ -380,22 +411,23 @@ wss.on("connection", (ws, req) => {
       }
 
       const { type, data } = parsed;
+      // console.log("parsed message:",parsed);
 
       // Just handle your existing message types with minimal changes:
       try {
         if (type === "join-student-room") {
           const { studentId, userId, userType } = data;
-
+         
           rooms.forEach((clients, roomId) => {
             clients.delete(ws);
             if (clients.size === 0) rooms.delete(roomId);
           });
-
+         
           if (!rooms.has(studentId)) rooms.set(studentId, new Set());
           rooms.get(studentId).add(ws);
-
+         
           await addUserToPresence(studentId, userId);
-
+         
           const result = await pool.query(
             "SELECT name FROM users WHERE id = $1",
             [ws.userId]
@@ -403,11 +435,11 @@ wss.on("connection", (ws, req) => {
           const name = result.rows[0]?.name || "Unknown";
           await addUserToPresence(studentId, userId, name, userType);
           const allUsers = await getAllUsersInRoom(studentId);
-
+         
           ws.studentId = studentId;
           ws.userId = userId;
           ws.userType = userType;
-
+         
           await safePublish(
             "presence-update",
             JSON.stringify({
@@ -419,14 +451,29 @@ wss.on("connection", (ws, req) => {
               },
             })
           );
-
+         
+          const savedUIState = await presenceRedis.get(`ui-state:${studentId}`);
+          if (savedUIState) {
+            await safePublish(
+              "plans-update", 
+              JSON.stringify({
+                studentId: studentId,
+                data: {
+                  type: "plans-update",
+                  plans: JSON.parse(savedUIState),
+                  sender: "system"
+                }
+              })
+            );
+          }
+         
           ws.send(
             JSON.stringify({
               type: "room-joined",
               data: { studentId, userType, userId },
             })
           );
-        } else if (type === "chat-message") {
+         } else if (type === "chat-message") {
           await safePublish(
             "chat-message",
             JSON.stringify({
@@ -440,6 +487,7 @@ wss.on("connection", (ws, req) => {
             })
           );
         } else if (type === "plans-update") {
+          await presenceRedis.set(`ui-state:${ws.studentId}`, JSON.stringify(parsed.plans));
           await safePublish(
             "plans-update",
             JSON.stringify({
@@ -463,7 +511,11 @@ wss.on("connection", (ws, req) => {
               },
             })
           );
-        } else {
+        } else if (type === "leave-room") {
+          await handleUserDisconnect(ws);
+          return;
+        }
+        else {
           ws.send(
             JSON.stringify({ info: `Server received unknown type: ${type}` })
           );
@@ -651,24 +703,26 @@ app.get(
     session: false,
   }),
   (req, res) => {
-    if (!req.user?.token) {
+    if (!req.user?.accessToken || !req.user?.refreshToken) {
       return res.redirect(
         `${process.env.FRONTEND_URL}/login?error=auth_failed`
       );
     }
-
-    res.cookie("token", req.user.token, {
+    res.cookie("token", req.user.accessToken, {
       httpOnly: true,
       secure: true,
       sameSite: "none",
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      maxAge: 60 * 60 * 1000, // 60 minutes
     });
-
+    res.cookie("refreshToken", req.user.refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
     res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
   }
 );
-
-
 
 /**
  * ALL GET
@@ -805,7 +859,7 @@ app.post("/api/admin/plans/:studentId", authenticateToken, async (req, res) => {
         course.year,
         course.course_id,
       ]);
-      console.log("course being inserted:", course);
+      // console.log("course being inserted:", course);
     }
 
     await client.query("COMMIT");
@@ -852,7 +906,7 @@ app.post("/api/plans", authenticateToken, async (req, res) => {
         course.year,
         course.course_id,
       ]);
-      console.log("course being inserted:", course);
+      // console.log("course being inserted:", course);
     }
 
     await client.query("COMMIT");
@@ -1220,10 +1274,41 @@ app.get(
     `;
 
       const result = await pool.query(query);
-      console.log("result from query FUCK:", result);
       res.json(result.rows);
     } catch (err) {
-      console.log("popular classes err:", err);
+      // console.log("popular classes err:", err);
+      res.status(500).json({ error: err });
+    }
+  }
+);
+
+app.get(
+  "/api/analytics/popular-classes-unique",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const query = `
+      SELECT
+        c.id,
+        c.name,
+        c.code,
+        COUNT(DISTINCT p.user_id) AS unique_student_count
+      FROM
+        plan_courses pc
+      JOIN
+        plans p ON pc.plan_id = p.id
+      JOIN
+        courses c ON pc.course_id = c.id
+      GROUP BY
+        c.id, c.name, c.code
+      ORDER BY
+        unique_student_count DESC;
+    `;
+
+      const result = await pool.query(query);
+      res.json(result.rows);
+    } catch (err) {
+      // console.log("popular classes err:", err);
       res.status(500).json({ error: err });
     }
   }
@@ -1246,10 +1331,10 @@ app.get(
     `;
 
       const result = await pool.query(query);
-      console.log("result from query:", result.rows);
+      // console.log("result from query:", result.rows);
       res.json(result.rows);
     } catch (err) {
-      console.log("error:", err);
+      // console.log("error:", err);
       res.status(500).json({ error: err });
     }
   }
@@ -1265,10 +1350,10 @@ app.get("/api/analytics/no-plans", authenticateToken, async (req, res) => {
     `;
 
     const result = await pool.query(query);
-    console.log("result from no plans query:", result.rows);
+    // console.log("result from no plans query:", result.rows);
     res.json(result.rows);
   } catch (err) {
-    console.log("error:", err);
+    // console.log("error:", err);
     res.status(500).json({ error: err });
   }
 });
@@ -1293,9 +1378,7 @@ app.get("/api/classes", authenticateToken, async (req, res) => {
   try {
     const query = `
     SELECT 
-        id,
-        name,
-        credits
+        *
       FROM courses
     `;
     const result = await pool.query(query);
@@ -1332,10 +1415,10 @@ app.post("/api/completed-courses", authenticateToken, async (req, res) => {
       `,
       [userId, courseId]
     );
-    console.log(
-      "returned after posting to completed courses:",
-      className + " " + courseId
-    );
+    // console.log(
+    //   "returned after posting to completed courses:",
+    //   className + " " + courseId
+    // );
     res.json({ class_name: className, id: courseId });
   } catch (err) {
     console.error(err.message);
@@ -1355,18 +1438,12 @@ app.get("/api/eligible-courses", authenticateToken, async (req, res) => {
     }
 
     const userId = req.user.id;
-    // console.log("Authenticated user:", userId);
-
-    // 1. Get list of completed course IDs
     const completedRes = await pool.query(
       `SELECT course_id FROM user_courses WHERE user_id = $1`,
       [userId]
     );
     const completed = completedRes.rows.map((r) => r.course_id);
     const completedSet = new Set(completed);
-    // console.log("✅ User completed course IDs:", Array.from(completedSet));
-
-    // 2. Get all courses + their prerequisite groups and members
     const prereqRes = await pool.query(`
       SELECT 
         c.id AS course_id, c.code, c.name, c.track,
@@ -1380,10 +1457,6 @@ app.get("/api/eligible-courses", authenticateToken, async (req, res) => {
       LEFT JOIN courses cp ON pgm.prerequisite_id = cp.id
       ORDER BY c.id, pg.id
     `);
-
-    // console.log("✅ Raw prerequisite data:", prereqRes.rows);
-
-    // 3. Restructure into usable format
     const courseMap = {}; // course_id → course data w/ prereqs
 
     for (const row of prereqRes.rows) {
@@ -1404,13 +1477,11 @@ app.get("/api/eligible-courses", authenticateToken, async (req, res) => {
           code,
           name,
           track,
-          prereq_groups: [], // Will be array of arrays
+          prereq_groups: [],
         };
       }
 
-      // If there's a prerequisite group
       if (group_id) {
-        // Find existing group or create new one
         let existingGroup = courseMap[course_id].prereq_groups.find(
           (g) => g.group_id === group_id
         );
@@ -1422,8 +1493,6 @@ app.get("/api/eligible-courses", authenticateToken, async (req, res) => {
           };
           courseMap[course_id].prereq_groups.push(existingGroup);
         }
-
-        // Add prerequisite to this group if it exists
         if (prerequisite_id) {
           existingGroup.prerequisites.push({
             id: prerequisite_id,
@@ -1433,51 +1502,32 @@ app.get("/api/eligible-courses", authenticateToken, async (req, res) => {
         }
       }
     }
-
-    // console.log("✅ Structured course map:", JSON.stringify(courseMap, null, 2));
-
     // 4. Determine eligibility
     const eligible = [];
 
     for (const courseId in courseMap) {
       const course = courseMap[courseId];
       const courseIdNum = parseInt(courseId);
-
-      // Skip if already completed
       if (completedSet.has(courseIdNum)) {
-        // console.log(`⏭️ Skipping ${course.code} - already completed`);
         continue;
       }
 
-      // Check eligibility
       let isEligible = false;
-
-      // If no prerequisite groups, course is eligible by default
       if (course.prereq_groups.length === 0) {
-        // console.log(`✅ ${course.code} is eligible - no prerequisites`);
         isEligible = true;
       } else {
-        // Check if ANY prerequisite group is satisfied
         for (const group of course.prereq_groups) {
           const groupSatisfied = group.prerequisites.every((prereq) => {
             const hasPrereq = completedSet.has(prereq.id);
-            // console.log(`  Checking prereq ${prereq.code} (ID: ${prereq.id}): ${hasPrereq ? 'COMPLETED' : 'NOT COMPLETED'}`);
             return hasPrereq;
           });
-
-          // console.log(`  Group ${group.group_id} for ${course.code}: ${groupSatisfied ? 'SATISFIED' : 'NOT SATISFIED'}`);
-
           if (groupSatisfied) {
             isEligible = true;
             break;
           }
         }
       }
-
-      // console.log(`📊 ${course.code} eligibility: ${isEligible}`);
-
       if (isEligible) {
-        // Format prereq_groups for frontend consumption (array of arrays)
         const formattedPrereqGroups = course.prereq_groups.map((group) =>
           group.prerequisites.map((prereq) => ({
             id: prereq.id,
@@ -1495,11 +1545,8 @@ app.get("/api/eligible-courses", authenticateToken, async (req, res) => {
         });
       }
     }
-
-    // console.log("✅ Final eligible courses:", eligible);
     res.json(eligible);
   } catch (err) {
-    // console.error("❌ Error fetching eligible courses:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -1515,7 +1562,6 @@ app.delete(
   async (req, res) => {
     const user_id = req.user.id;
     const { id } = req.params;
-    console.log("the course Id I'm trying to delete:", id);
     // This assumes that you can only take a class once a year
     try {
       const classNameResponse = await pool.query(

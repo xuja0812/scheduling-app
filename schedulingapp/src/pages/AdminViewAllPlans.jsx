@@ -46,9 +46,9 @@ export default function AdminViewAllPlans() {
   const viewStudentPlanner = (email) => {
     let id = 0;
     for(const plan of plans){
-      console.log("iterating plan:",plan);
+      // console.log("iterating plan:",plan);
       if(plan.studentEmail === email){
-        console.log("HELLO",plan.studentId);
+        // console.log("HELLO",plan.studentId);
         id = plan.studentId;
       }
     }
@@ -101,7 +101,7 @@ export default function AdminViewAllPlans() {
     if (!acc[plan.studentEmail]) {
       acc[plan.studentEmail] = [];
     }
-    console.log("plan format:",plan);
+    // console.log("plan format:",plan);
     acc[plan.studentEmail].push(plan);
     return acc;
   }, {});

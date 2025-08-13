@@ -1,7 +1,7 @@
 require("dotenv").config();
 const { initDB, migration } = require("./db");
 
-initDB().then(() => {
+migration().then(() => {
   console.log('Migration complete');
   process.exit(0);
 }).catch((err) => {

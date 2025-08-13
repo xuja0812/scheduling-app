@@ -2,7 +2,6 @@ import React from "react";
 import { Tabs, Tab, Button } from "@mui/material";
 
 const PlanTabs = React.memo(({ plans, activePlanIndex, setActivePlanIndex, handleAddPlan }) => {
-    console.log("active plan index in component:",activePlanIndex);
   return (
     <Tabs
       value={activePlanIndex}

@@ -79,7 +79,7 @@ const conflictDetection = (plan) => {
       }
     });
   });
-  console.log("conflicts:", conflicts);
+  // console.log("conflicts:", conflicts);
   return conflicts;
 };
 
@@ -164,7 +164,7 @@ export default function FourYearPlanner() {
         return res.json();
       })
       .then((data) => {
-        console.log("returned from api/classes:", data);
+        // console.log("returned from api/classes:", data);
         let cs = new Map();
         for (let course of data) {
           cs.set(course.name, course);
@@ -225,8 +225,8 @@ export default function FourYearPlanner() {
             break;
           case "plans-update":
             if (data.sender !== username) {
-              console.log("activePlanIndex:", activePlanIndex);
-              console.log("actual length:", data.plans.length);
+              // console.log("activePlanIndex:", activePlanIndex);
+              // console.log("actual length:", data.plans.length);
               // setActivePlanIndex((prev) => data.plans.length - 1);
               setPlans(data.plans);
               // const { planIndex, planData, updatedBy } = data;
@@ -263,7 +263,7 @@ export default function FourYearPlanner() {
             }
             break;
           case "presence-update":
-            console.log("data:", data);
+            // console.log("data:", data);
             setViewers(data.users || []);
             break;
           default:
@@ -330,17 +330,21 @@ export default function FourYearPlanner() {
     setInputMessage("");
   };
 
-  const sendPlansUpdate = React.useCallback((updatedPlans) => {
-    console.log("sending message: ", updatedPlans);
-    if (!socket || !isConnected) return;
-    console.log("sending message2: ", updatedPlans);
-    const messageData = {
-      type: "plans-update",
-      plans: updatedPlans,
-      sender: username,
-    };
-    socket.send(JSON.stringify(messageData));
-  }, [socket, isConnected, username]);
+  const sendPlansUpdate = React.useCallback(
+    (updatedPlans) => {
+      // console.log("sending message: ", updatedPlans);
+      if (!socket || !isConnected) return;
+      // console.log("sending message2: ", updatedPlans);
+      const messageData = {
+        type: "plans-update",
+        plans: updatedPlans,
+        sender: username,
+        shouldPersist: true
+      };
+      socket.send(JSON.stringify(messageData));
+    },
+    [socket, isConnected, username]
+  );
 
   const sendCommentsUpdate = (updatedComments) => {
     if (!socket || !isConnected) return;
@@ -378,7 +382,7 @@ export default function FourYearPlanner() {
           sendPlansUpdate(plans);
           return;
         }
-        console.log("plans data:", plansData);
+        // console.log("plans data:", plansData);
         Promise.all(
           plansData.map((plan) =>
             fetch(`${backendUrl}/api/plans/${plan.id}`, {
@@ -404,7 +408,7 @@ export default function FourYearPlanner() {
           )
         ).then((plansWithCourses) => {
           setPlans(plansWithCourses);
-          console.log("plans:", plansWithCourses);
+          // console.log("plans:", plansWithCourses);
           sendPlansUpdate(plansWithCourses);
 
           plansWithCourses.forEach((plan) => {
@@ -450,7 +454,7 @@ export default function FourYearPlanner() {
       body: JSON.stringify({ text: newComment.trim() }),
     })
       .then((res) => {
-        console.log("new comment:", newComment);
+        // console.log("new comment:", newComment);
         if (!res.ok) throw new Error("Failed to post comment");
         setNewComment("");
         fetchComments(planId);
@@ -472,7 +476,7 @@ export default function FourYearPlanner() {
   const flattenCourses = (yearsObj) => {
     const cs = [];
     for (const [year, classes] of Object.entries(yearsObj)) {
-      console.log("classes:", classes);
+      // console.log("classes:", classes);
       classes.forEach((class_code) => {
         const course_id = courses.get(class_code).id;
         cs.push({
@@ -482,14 +486,14 @@ export default function FourYearPlanner() {
         });
       });
     }
-    console.log("flattened courses:", cs);
+    // console.log("flattened courses:", cs);
     return cs;
   };
 
   const handleSaveCourses = () => {
     const activePlan = plans[activePlanIndex];
     const coursesFlat = flattenCourses(activePlan.years);
-    console.log("flattened courses in hook:", coursesFlat);
+    // console.log("flattened courses in hook:", coursesFlat);
 
     if (!activePlan.id) {
       const urlParams = new URLSearchParams(window.location.search);
@@ -592,7 +596,7 @@ export default function FourYearPlanner() {
     const studentId = urlParams.get("studentId");
     const endpoint = counselorMode ? "admin/" : "";
     const end = counselorMode ? `/${studentId}` : "";
-  
+
     try {
       const response = await fetch(`${backendUrl}/api/${endpoint}plans${end}`, {
         method: "POST",
@@ -600,9 +604,9 @@ export default function FourYearPlanner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "", courses: [] }),
       });
-  
+
       const { planId } = await response.json();
-  
+
       const newPlan = {
         id: planId,
         name: "",
@@ -613,13 +617,12 @@ export default function FourYearPlanner() {
           "12th Grade": [],
         },
       };
-  
+
       setPlans((prevPlans) => {
         const updatedPlans = [...prevPlans, newPlan];
         sendPlansUpdate(updatedPlans);
         return updatedPlans;
       });
-  
     } catch (error) {
       console.error("Failed to create plan:", error);
       alert("Failed to create plan. Please try again.");

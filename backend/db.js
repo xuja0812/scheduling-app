@@ -1,8 +1,7 @@
 const { Pool } = require("pg");
 
 const pool = new Pool({
-  connectionString:
-    "postgresql://postgres.vbzymcqmyslgvucgigqg:vsX%26Mc%2A%23u79wYQQ@aws-0-us-east-2.pooler.supabase.com:6543/postgres",
+  connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
@@ -148,6 +147,7 @@ async function migration() {
         track TEXT,
         credits DECIMAL NOT NULL,
         category TEXT NOT NULL,
+        description TEXT NOT NULL,
         required_for_grad BOOLEAN DEFAULT FALSE
       );
     `);
@@ -182,6 +182,7 @@ async function migration() {
         "Computer Science",
         0.5,
         "Elective",
+        "In this course, students often work collaboratively to learn to use technology effectively and efficiently, both as consumers and creators.",
         true,
       ],
       [
@@ -190,24 +191,27 @@ async function migration() {
         "Computer Science",
         0.5,
         "Elective",
+        "Cybersecurity 1 is an introductory course in cybersecurity offering an understanding of cyber law and policy, Linux, networking technology basics, risk assessment, and cryptography",
         false,
       ],
       [
         "CS310002",
         "Cybersecurity 2",
-        "Computer Sciecne",
+        "Computer Science",
         0.5,
         "Elective",
+        "Cybersecurity 2 is a rigorous course in cybersecurity continuing the topics learned in Cybersecurity 1. The course is geared towards preparing students with the ability to take the CompTia Security+ certification exam.",
         false,
       ],
-      ["CS510000", "Multimedia 1", "Computer Science", 0.5, "Elective", false],
-      ["CS510004", "Programming 1", "Computer Science", 0.5, "Elective", false],
+      ["CS510000", "Multimedia 1", "Computer Science", 0.5, "Elective", "This hands-on, project-oriented course provides students with experience in creating and presenting media-rich projects.", false],
+      ["CS510004", "Programming 1", "Computer Science", 0.5, "Elective", "This course provides students with an introductory programming experience.", false],
       [
         "CS580020",
         "AP Computer Science Principles",
         "Computer Science",
         1.0,
         "Elective",
+        "Computer Science Principles is an introductory Advanced Placement course for students who are new to computer science and is designed to broaden participation in computer science.",
         false,
       ],
       [
@@ -216,23 +220,24 @@ async function migration() {
         "Computer Science",
         1.0,
         "Elective",
+        "AP Computer Science A is meant to be the equivalent of a first-semester college-level course in computer science programming.",
         false,
       ],
-      ["MA400021", "AP Calculus AB", "Math", 1.0, "Math", false],
-      ["MA305001", "Intro to Statistics", "Math", 0.5, "Math", false],
-      ["EN200001", "American Literature", "English", 1.0, "English", false],
+      ["MA400021", "AP Calculus AB", "Math", 1.0, "Math", "This Advanced Placement course will cover limits, derivatives, and integrals of algebraic and transcendental functions as well as applications of these topics.", false],
+      ["MA305001", "Intro to Statistics", "Math", 0.5, "Math", "This course will study statistics and data analysis.", false],
+      ["EN200001", "American Literature", "English", 1.0, "English", "Designed to give the student an introduction to important American authors as well as American authors of choice, this course exposes students to poetry, short stories, and novels. Students will engage in dialogue, write analytically, and conduct short, focused research.", false],
     ];
 
     const courseIdMap = {}; // Map course code → ID
 
-    for (const [code, name, track, credits, category, required] of courses) {
+    for (const [code, name, track, credits, category, description, required] of courses) {
       console.log("category:", category);
       const res = await client.query(
-        `INSERT INTO courses (code, name, track, credits, category, required_for_grad)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO courses (code, name, track, credits, category, description, required_for_grad)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (code) DO NOTHING
          RETURNING id`,
-        [code, name, track, credits, category, required]
+        [code, name, track, credits, category, description, required]
       );
       if (res.rows[0]) courseIdMap[code] = res.rows[0].id;
     }

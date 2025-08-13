@@ -24,7 +24,7 @@ passport.use(
           "SELECT * FROM users WHERE google_id = $1",
           [googleId]
         );
-        
+
         let user;
         if (userResult.rows.length > 0) {
           user = userResult.rows[0];
@@ -36,20 +36,26 @@ passport.use(
           user = insertResult.rows[0];
         }
 
-        const token = jwt.sign(
+        const accessToken = jwt.sign(
           {
             id: user.id,
             email: user.email,
             name: user.name,
-            role: user.role
-          }, 
+            role: user.role,
+          },
           process.env.JWT_SECRET,
-          { expiresIn: '24h'}
+          { expiresIn: "24h" }
         );
 
-        return done(null, { user, token });
+        const refreshToken = jwt.sign(
+          { id: user.id },
+          process.env.JWT_SECRET,
+          { expiresIn: "7d" }
+        );
+
+        return done(null, { user, accessToken, refreshToken });
       } catch (err) {
-        console.error('OAuth callback error:', err);
+        console.error("OAuth callback error:", err);
         return done(err);
       }
     }

@@ -59,11 +59,11 @@ for (let i = 0; i < TARGET_CONNECTIONS; i++) {
 
 setInterval(() => {
   const openConnections = connections.filter(ws => ws.readyState === WebSocket.OPEN).length;
-  console.log(`📊 Stats: ${openConnections} open connections, ${messagesReceived} messages received`);
+  console.log(`Stats: ${openConnections} open connections, ${messagesReceived} messages received`);
 }, 5000);
 
 setTimeout(() => {
-  console.log('🛑 Stopping load test...');
+  console.log('Stopping load test...');
   connections.forEach(ws => ws.close());
   process.exit(0);
 }, 60000);

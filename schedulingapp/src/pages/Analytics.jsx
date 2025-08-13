@@ -32,6 +32,7 @@ const COLORS = [
 export default function Analytics() {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [unique, setUnique] = useState([]);
   const [stats, setStats] = useState({
     totalStudents: 0,
     totalClasses: 0,
@@ -39,6 +40,7 @@ export default function Analytics() {
     popularClass: "",
     overloaded: [],
     noPlans: [],
+    uniquePlans: [],
   });
 
   const backendUrl =
@@ -66,10 +68,18 @@ export default function Analytics() {
         if (!res.ok) throw new Error("Failed to fetch other stats");
         return res.json();
       }),
+      fetch(`${backendUrl}/api/analytics/popular-classes-unique`, {
+        credentials: "include",
+      }).then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch other stats");
+        return res.json();
+      }),
     ])
-      .then(([popularClassesData, plansData, noPlansData]) => {
+      .then(([popularClassesData, plansData, noPlansData, uniqueData]) => {
         setClasses(popularClassesData);
-        console.log("popular classes:", popularClassesData);
+        setUnique(uniqueData);
+        // console.log("unique data:",uniqueData);
+        // console.log("popular classes:", popularClassesData);
         // Compute stats from popularClassesData
         const totalStudents =
           popularClassesData.length > 0
@@ -88,7 +98,7 @@ export default function Analytics() {
               prev.enrollment_count > current.enrollment_count ? prev : current
             )?.class_code || "";
 
-        console.log("no plans:", noPlansData);
+        // console.log("no plans:", noPlansData);
         // Combine stats with otherStatsData as needed
         // For example, let's assume otherStatsData has some fields like totalDepartments, averageRating, etc.
         setStats({
@@ -98,6 +108,7 @@ export default function Analytics() {
           popularClass,
           overloaded: plansData, // spread any other stats from the second API call
           noPlans: noPlansData,
+          uniquePlans: uniqueData
         });
 
         setLoading(false);
@@ -357,7 +368,7 @@ export default function Analytics() {
                 letterSpacing: 0.5,
               }}
             >
-              Class Popularity Overview
+              Class Popularity Overview (All Plans)
             </Typography>
 
             {loading ? (
@@ -415,6 +426,99 @@ export default function Analytics() {
                   />
                   <Bar
                     dataKey="enrollment_count"
+                    fill="url(#colorGradient)"
+                    radius={[8, 8, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Box>
+        )}
+        {/* Chart Card - now matches the styling of other cards */}
+        {(loading || classes.length > 0) && (
+          <Box
+            component={Paper}
+            elevation={0}
+            sx={{
+              bgcolor: "rgba(255, 255, 255, 0.06)",
+              borderRadius: 3,
+              p: 4,
+              color: "white",
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
+              "@media (max-width:768px)": {
+                p: 3,
+              },
+            }}
+          >
+            <Typography
+              variant="h5"
+              component="h3"
+              sx={{
+                color: "white",
+                fontWeight: 700,
+                mb: 3,
+                userSelect: "none",
+                letterSpacing: 0.5,
+              }}
+            >
+              Class Popularity Overview (Unique Students)
+            </Typography>
+
+            {loading ? (
+              <div
+                style={{
+                  height: "400px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#cbd5e1",
+                  fontSize: "1.125rem",
+                }}
+              >
+                Loading...
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart
+                  data={unique}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="colorGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="100%" stopColor="#60a5fa" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="rgba(148, 163, 184, 0.2)"
+                  />
+                  <XAxis
+                    dataKey="name"
+                    angle={-45}
+                    textAnchor="end"
+                    height={80}
+                    interval={0}
+                    tick={{ fill: "rgba(255, 255, 255, 0.8)", fontSize: 12 }}
+                  />
+                  <YAxis tick={{ fill: "rgba(255, 255, 255, 0.8)" }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "rgba(15, 23, 42, 0.95)",
+                      border: "1px solid rgba(148, 163, 184, 0.2)",
+                      borderRadius: "12px",
+                      color: "white",
+                      backdropFilter: "blur(20px)",
+                    }}
+                  />
+                  <Bar
+                    dataKey="unique_student_count"
                     fill="url(#colorGradient)"
                     radius={[8, 8, 0, 0]}
                   />

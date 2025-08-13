@@ -61,26 +61,13 @@ export default function Account() {
   const yearOptions = ["9th", "10th", "11th", "12th"];
 
   useEffect(() => {
-    fetchCompletedClasses();
-    fetchAvailableClasses();
-    fetchEligibleClasses();
+    const fetchData = async () => {
+      const completed = await fetchCompletedClasses();
+      await fetchAvailableClasses(completed);
+      await fetchEligibleClasses();
+    };
+    fetchData();
   }, []);
-
-  const fetchEligibleClasses = async () => {
-    try {
-        const response = await fetch(`${backendUrl}/api/eligible-courses`, {
-            credentials: "include",
-          });
-        if (response.ok) {
-            const eligible = await response.json();
-            setEligibleClasses(eligible);
-        }
-      } catch (error) {
-        console.error("Failed to fetch eligible classes:", error);
-      } finally {
-        setLoading(false);
-      }
-  }
 
   const fetchCompletedClasses = async () => {
     try {
@@ -90,17 +77,21 @@ export default function Account() {
       });
       if (response.ok) {
         const data = await response.json();
-        console.log("completed classes:",data);
+        // console.log("completed classes:", data);
         setCompletedClasses(data);
+        return data;
+      } else {
+        return [];
       }
     } catch (error) {
       console.error("Failed to fetch completed classes:", error);
+      return [];
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchAvailableClasses = async () => {
+  const fetchAvailableClasses = async (completedClassesData = []) => {
     try {
       const response = await fetch(`${backendUrl}/api/classes`, {
         method: "GET",
@@ -108,15 +99,40 @@ export default function Account() {
       });
       if (response.ok) {
         const data = await response.json();
-        console.log("data:",data);
-        setAvailableClasses(
-          data.map((item, i) => {
-            return item.name;
-          })
+
+        const completedClassNames = new Set(
+          completedClassesData.map((cls) => cls.class_name)
         );
+        // console.log(
+        //   "completed classes in fetchAvailableClasses:",
+        //   completedClassesData
+        // );
+        // console.log("completed class names:", completedClassNames);
+
+        const filteredAvailableClasses = data
+          .filter((item) => !completedClassNames.has(item.name))
+          .map((item) => item.name);
+        filteredAvailableClasses.sort();
+        setAvailableClasses(filteredAvailableClasses);
       }
     } catch (error) {
       console.error("Failed to fetch available classes:", error);
+    }
+  };
+
+  const fetchEligibleClasses = async () => {
+    try {
+      const response = await fetch(`${backendUrl}/api/eligible-courses`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const eligible = await response.json();
+        setEligibleClasses(eligible);
+      }
+    } catch (error) {
+      console.error("Failed to fetch eligible classes:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -138,8 +154,12 @@ export default function Account() {
 
       if (response.ok) {
         const newClass = await response.json();
-        console.log("new class:",newClass);
+        // console.log("new class:", newClass);
         setCompletedClasses((prev) => [...prev, newClass]);
+        setAvailableClasses((prev) => {
+          const newPrev = prev.filter((item) => item !== newClass.class_name);
+          return newPrev;
+        });
         handleCloseDialog();
         // update eligible courses
         const eligibleRes = await fetch(`${backendUrl}/api/eligible-courses`, {
@@ -154,7 +174,7 @@ export default function Account() {
   };
 
   const handleRemoveClass = async (courseId) => {
-    console.log('course id trying to delete:',courseId);
+    // console.log("course id trying to delete:", courseId);
     try {
       const response = await fetch(
         `${backendUrl}/api/completed-courses/${courseId}`,
@@ -164,16 +184,21 @@ export default function Account() {
         }
       );
       const data = await response.json();
-      console.log("deleting data:",data);
+    //   console.log("deleting data:", data);
       if (response.ok) {
         setCompletedClasses((prev) =>
           prev.filter((cls) => cls.class_name !== data.class_name)
         );
+        setAvailableClasses((prev) => {
+          const newPrev = [...prev, data.class_name];
+          newPrev.sort();
+          return newPrev;
+        });
         const eligibleRes = await fetch(`${backendUrl}/api/eligible-courses`, {
-            credentials: "include",
-          });
-          const eligible = await eligibleRes.json();
-          setEligibleClasses(eligible);
+          credentials: "include",
+        });
+        const eligible = await eligibleRes.json();
+        setEligibleClasses(eligible);
       }
     } catch (error) {
       console.error("Failed to remove completed class:", error);
@@ -203,7 +228,8 @@ export default function Account() {
         justifyContent: "flex-start",
         px: 2,
         py: 4,
-        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        fontFamily:
+          '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         position: "relative",
       }}
     >
@@ -223,14 +249,15 @@ export default function Account() {
           position: "relative",
           transition: "all 0.2s ease-out",
           mb: 4,
-          mt: 16
+          mt: 16,
         }}
       >
         <Box sx={{ mb: 6, textAlign: "center" }}>
           <Typography
             variant="h3"
             sx={{
-              fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              fontFamily:
+                '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               fontWeight: "700",
               fontSize: "2rem",
               color: "#ffffff",
@@ -262,7 +289,7 @@ export default function Account() {
             Track the classes you've already completed
           </Typography>
         </Box>
-  
+
         <Box sx={{ mb: 4, textAlign: "center" }}>
           <Button
             variant="contained"
@@ -288,7 +315,7 @@ export default function Account() {
             Add Course
           </Button>
         </Box>
-  
+
         <Box sx={{ mb: 6 }}>
           {loading ? (
             <Box sx={{ textAlign: "center", py: 4 }}>
@@ -372,7 +399,7 @@ export default function Account() {
             </Stack>
           )}
         </Box>
-  
+
         <Box
           sx={{
             position: "absolute",
@@ -380,12 +407,13 @@ export default function Account() {
             left: -1,
             right: -1,
             height: "2px",
-            background: "linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), transparent)",
+            background:
+              "linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), transparent)",
             borderRadius: "20px 20px 0 0",
           }}
         />
       </Paper>
-  
+
       {/* FlowChart Section */}
       {completedClasses.length > 0 && (
         <Paper
@@ -407,7 +435,8 @@ export default function Account() {
             <Typography
               variant="h4"
               sx={{
-                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                fontFamily:
+                  '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 fontWeight: "700",
                 fontSize: "1.75rem",
                 color: "#ffffff",
@@ -439,12 +468,12 @@ export default function Account() {
               Based on your completed courses, here's what you can take next
             </Typography>
           </Box>
-  
+
           <FlowChart
             eligibleClasses={eligibleClasses}
             completedClasses={completedClasses}
           />
-  
+
           <Box
             sx={{
               position: "absolute",
@@ -452,13 +481,14 @@ export default function Account() {
               left: -1,
               right: -1,
               height: "2px",
-              background: "linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.5), transparent)",
+              background:
+                "linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.5), transparent)",
               borderRadius: "20px 20px 0 0",
             }}
           />
         </Paper>
       )}
-  
+
       {/* Dialog remains the same */}
       <Dialog
         open={addDialogOpen}
@@ -524,7 +554,7 @@ export default function Account() {
                 },
               }}
             />
-  
+
             <FormControl fullWidth>
               <InputLabel
                 sx={{
