@@ -331,7 +331,7 @@ resource "aws_ecs_task_definition" "scheduling_task" {
         },
         {
           name  = "GOOGLE_CALLBACK_URL"
-          value = "https://xuja0812.online/auth/google/callback"
+          value = "https://api.xuja0812.online/auth/google/callback"
         }
       ]
       secrets = [
