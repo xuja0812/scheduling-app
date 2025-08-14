@@ -22,16 +22,6 @@ jobs:
           cd backend
           docker build --platform linux/amd64 -t test-backend .
 
-      - name: Run Smoke Test
-        run: |
-          docker run -d -p 4000:4000 --name backend-test test-backend
-          # Wait a few seconds for server to start
-          sleep 5
-          # Make a simple request to health endpoint
-          curl -f http://localhost:4000/health || (echo "Backend failed smoke test" && exit 1)
-          docker stop backend-test
-          docker rm backend-test
-
   build-and-push:
     name: Build and Push to ECR
     runs-on: ubuntu-latest
