@@ -726,13 +726,15 @@ app.get(
     res.cookie("token", req.user.accessToken, {
       httpOnly: true,
       secure: true,
-      sameSite: "none",
+      sameSite: "strict",
+      path: "/",
       maxAge: 60 * 60 * 1000, // 60 minutes
     });
     res.cookie("refreshToken", req.user.refreshToken, {
       httpOnly: true,
       secure: true,
-      sameSite: "none",
+      sameSite: "strict",
+      path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
     res.redirect(`${process.env.FRONTEND_URL}/dashboard`);

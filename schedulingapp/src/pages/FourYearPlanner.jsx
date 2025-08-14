@@ -103,7 +103,7 @@ export default function FourYearPlanner() {
   // Conflict vars
   const [conflicts, setConflicts] = useState([]);
 
-  const [courses, setCourses] = useState({});
+  const [courses, setCourses] = useState([]);
   const [viewers, setViewers] = useState([]);
 
   const handleConflicts = () => {
