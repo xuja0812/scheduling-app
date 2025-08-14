@@ -157,7 +157,7 @@ const Dashboard = () => {
     {
       title: "Create Schedule",
       subtitle: "Plan your semester",
-      action: () => navigate("/planner"),
+      action: () => navigate(`/planner?studentId=${user.id}`),
       color: "#10b981",
       bgColor: "rgba(16, 185, 129, 0.1)",
     },
@@ -397,7 +397,7 @@ const Dashboard = () => {
                 </Typography>
                 <Button
                   variant="outlined"
-                  onClick={() => navigate("/planner")}
+                  onClick={() => navigate(`/planner?studentId=${user.id}`)}
                   sx={{
                     borderColor: "rgba(59, 130, 246, 0.3)",
                     color: "#60a5fa",

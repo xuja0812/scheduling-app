@@ -290,7 +290,7 @@ export default function FourYearPlanner() {
   const batchTimeout = React.useRef(null);
   const sendPlansUpdate = React.useCallback(
     (updatedPlans) => {
-      console.log("updated plans:", updatedPlans);
+      // console.log("updated plans:", updatedPlans);
       if (!socket || !isConnected) return;
 
       pendingPlans.current = updatedPlans;
